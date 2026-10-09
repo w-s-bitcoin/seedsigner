@@ -1,0 +1,106 @@
+name: Build Pi Zero PR test image
+
+on:
+  push:
+    branches:
+      - codex/pi0-pr1-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APP_REPOSITORY: https://github.com/w-s-bitcoin/seedsigner.git
+  APP_COMMIT: fe1af00982ad8bf1f7344317739ac21d8d5460be
+  BUILDER_COMMIT: c4cb767a00ace8edf5e9414450c2849e15958ad7
+
+jobs:
+  build-pi0:
+    name: Pi Zero / Zero W test image
+    if: github.ref == 'refs/heads/codex/pi0-pr1-build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the pinned official builder
+        uses: actions/checkout@v4
+        with:
+          repository: SeedSigner/seedsigner-os
+          ref: ${{ env.BUILDER_COMMIT }}
+          path: seedsigner-os
+          fetch-depth: 0
+          submodules: true
+          persist-credentials: false
+
+      - name: Build the official Linux amd64 container
+        run: |
+          test "$(git -C seedsigner-os rev-parse HEAD)" = "$BUILDER_COMMIT"
+          docker build --platform linux/amd64 --tag seedsigner-pi0-builder seedsigner-os
+
+      - name: Build the pinned app for Pi Zero
+        run: |
+          mkdir -p seedsigner-os/images seedsigner-os/buildroot_dl "$HOME/.buildroot-ccache"
+          # Let the official builder clone the pinned app and compile its translations/fonts.
+          docker run --rm --platform linux/amd64 \
+            --volume "$PWD/seedsigner-os/opt:/opt" \
+            --volume "$PWD/seedsigner-os/images:/images" \
+            --volume "$PWD/seedsigner-os/buildroot_dl:/buildroot_dl" \
+            --volume "$HOME/.buildroot-ccache:/root/.buildroot-ccache" \
+            seedsigner-pi0-builder \
+            --pi0 \
+            --app-repo="$APP_REPOSITORY" \
+            --app-commit-id="$APP_COMMIT"
+          sudo chown -R "$(id -u):$(id -g)" seedsigner-os/images
+
+      - name: Verify the image and record build metadata
+        run: |
+          image="seedsigner-os/images/seedsigner_os.${APP_COMMIT}.pi0.img"
+          test -s "$image"
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path("seedsigner-os/opt/rootfs-overlay/opt/src/seedsigner/version.json")
+          version = json.loads(path.read_text())
+          for key in ("name", "fork", "short_commit_hash", "timestamp"):
+              assert isinstance(version.get(key), str) and version[key].strip(), f"Missing or invalid {key}"
+          short_hash = version["short_commit_hash"]
+          assert re.fullmatch(r"[0-9a-f]{7,40}", short_hash), "Invalid short commit hash"
+          assert os.environ["APP_COMMIT"].startswith(short_hash), "Unexpected app commit"
+          assert version["fork"] == "w-s-bitcoin", "Unexpected app fork"
+          datetime.datetime.fromisoformat(version["timestamp"])
+          print(json.dumps(version, indent=2))
+          PY
+          mkdir -p artifacts
+          mv "$image" artifacts/
+          cp seedsigner-os/opt/rootfs-overlay/opt/src/seedsigner/version.json artifacts/version.json
+          cat > artifacts/BUILD_INFO.txt <<EOF
+          Purpose: Unreleased Pi Zero / Zero W hardware test image
+          App repository: $APP_REPOSITORY
+          App commit: $APP_COMMIT
+          Builder repository: https://github.com/SeedSigner/seedsigner-os.git
+          Builder commit: $BUILDER_COMMIT
+          Target: pi0
+          Container platform: linux/amd64
+          Container image ID: $(docker image inspect seedsigner-pi0-builder --format '{{.Id}}')
+          Workflow commit: $GITHUB_SHA
+          Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Built at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Build route: Official Dockerfile and build.sh, pinned app clone, translations/fonts compiled
+          Reproducibility scope: App/builder source pins; upstream Docker base and apt repositories are not snapshot-pinned.
+          EOF
+          (cd artifacts && sha256sum seedsigner_os.*.pi0.img version.json BUILD_INFO.txt > SHA256SUMS)
+          cat artifacts/SHA256SUMS
+
+      - name: Upload the Pi Zero image, checksum, and metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: seedsigner-pi0-fe1af00982ad8bf1f7344317739ac21d8d5460be
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
