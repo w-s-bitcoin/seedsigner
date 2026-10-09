@@ -2,7 +2,7 @@ import logging
 import math
 import time
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from gettext import gettext as _
 from PIL import Image, ImageDraw, ImageFilter
 from typing import List
@@ -10,7 +10,7 @@ from typing import List
 from seedsigner.hardware.buttons import HardwareButtons, HardwareButtonsConstants
 from seedsigner.helpers.qr import QR
 from seedsigner.gui.components import (Button, FontAwesomeIconConstants, Fonts, FormattedAddress, IconButton,
-    IconTextLine, SeedSignerIconConstants, TextArea, GUIConstants, reflow_text_into_pages)
+    IconTextLine, FingerprintHeader, FingerprintTransition, SeedSignerIconConstants, TextArea, GUIConstants, reflow_text_into_pages)
 from seedsigner.gui.keyboard import Keyboard, TextEntryDisplay
 from seedsigner.gui.renderer import Renderer
 from seedsigner.models.threads import BaseThread, ThreadsafeCounter
@@ -426,6 +426,7 @@ class SeedFinalizeScreen(ButtonListScreen):
         super().__post_init__()
 
         self.fingerprint_icontl = IconTextLine(
+            lifehash_fingerprint=self.fingerprint,
             icon_name=SeedSignerIconConstants.FINGERPRINT,
             icon_color=GUIConstants.INFO_COLOR,
             icon_size=GUIConstants.ICON_FONT_SIZE + 12,
@@ -442,13 +443,41 @@ class SeedFinalizeScreen(ButtonListScreen):
 @dataclass
 class SeedOptionsScreen(ButtonListScreen):
     fingerprint: str = None
+    fingerprint_without: str = None
+    fingerprint_parent: str = None
+    checked_button_indices: List[int] = None
+    checked_button_colors: dict[int, str] = None
+    selected_checked_button_colors: dict[int, str] = None
 
     def __post_init__(self):
+        self.top_nav_lifehash_fingerprint = self.fingerprint
+        self.top_nav_lifehash_fingerprint_source = self.fingerprint_without
+        self.top_nav_lifehash_arrow_color = GUIConstants.PASSPHRASE_COLOR
+        if self.fingerprint_parent:
+            self.top_nav_lifehash_fingerprints = (self.fingerprint_parent,)
+            self.top_nav_lifehash_arrow_colors = (GUIConstants.BIP85_COLOR,)
+            if self.fingerprint_without:
+                self.top_nav_lifehash_fingerprints += (self.fingerprint_without,)
+                self.top_nav_lifehash_arrow_colors += (GUIConstants.PASSPHRASE_COLOR,)
+            self.top_nav_lifehash_fingerprints += (self.fingerprint,)
         self.top_nav_icon_name = SeedSignerIconConstants.FINGERPRINT
         self.top_nav_icon_color = GUIConstants.INFO_COLOR
         self.title = self.fingerprint
         self.is_button_text_centered = False
         self.is_bottom_list = True
+        checked_indices = set(self.checked_button_indices or [])
+        checked_colors = self.checked_button_colors or {}
+        selected_checked_colors = self.selected_checked_button_colors or {}
+        self.button_data = [
+            replace(option, right_icon_name=SeedSignerIconConstants.CHECK,
+                    right_icon_color=checked_colors.get(index, GUIConstants.SUCCESS_COLOR),
+                    selected_right_icon_color=selected_checked_colors.get(index, checked_colors.get(index, GUIConstants.SUCCESS_COLOR)),
+                    selected_right_icon_background_color=(GUIConstants.BACKGROUND_COLOR
+                                                          if index in checked_colors or index in selected_checked_colors
+                                                          else option.selected_right_icon_background_color))
+            if index in checked_indices else option
+            for index, option in enumerate(self.button_data)
+        ]
 
         super().__post_init__()
 
@@ -461,17 +490,33 @@ class SeedWordsScreen(WarningEdgesMixin, ButtonListScreen):
     num_pages: int = 3
     is_bottom_list: bool = True
     status_color: str = GUIConstants.DIRE_WARNING_COLOR
+    fingerprint_parent: str = None
+    fingerprint_child: str = None
+    child_index: int = None
 
 
     def __post_init__(self):
-        # TRANSLATOR_NOTE: Displays the page number and total: (e.g. page 1 of 6)
-        self.title = _("Seed Words: {}/{}").format(self.page_index + 1, self.num_pages)
+        if self.fingerprint_parent and self.fingerprint_child:
+            self.top_nav_lifehash_fingerprint_source = self.fingerprint_parent
+            self.top_nav_lifehash_fingerprint = self.fingerprint_child
+            self.top_nav_lifehash_arrow_color = GUIConstants.BIP85_COLOR
+            self.title = self.fingerprint_child
+        else:
+            # TRANSLATOR_NOTE: Displays the page number and total: (e.g. page 1 of 6)
+            self.title = _("Seed Words: {}/{}").format(self.page_index + 1, self.num_pages)
         super().__post_init__()
 
         words_per_page = len(self.words)
 
         self.body_x = 0
         self.body_y = self.top_nav.height - int(GUIConstants.COMPONENT_PADDING / 2)
+        if self.fingerprint_child:
+            self.components.append(TextArea(
+                # TRANSLATOR_NOTE: BIP-85 child index, current word page and total pages.
+                text=_("Child #{}: {}/{}").format(self.child_index, self.page_index + 1, self.num_pages),
+                screen_y=self.top_nav.height, font_size=14, auto_line_break=False,
+            ))
+            self.body_y = self.top_nav.height + 28
         self.body_height = self.buttons[0].screen_y - self.body_y
 
         # Have to supersample the whole body since it's all at the small font size
@@ -538,10 +583,68 @@ class SeedWordsScreen(WarningEdgesMixin, ButtonListScreen):
 
 
 @dataclass
+class SeedBIP85ReviewScreen(ButtonListScreen):
+    fingerprint_parent: str = None
+    fingerprint_child: str = None
+    child_index: int = 0
+    num_words: int = 12
+
+    def __post_init__(self):
+        self.title = _("BIP-85 Child")
+        self.is_bottom_list = True
+        super().__post_init__()
+        transition = FingerprintTransition(
+            fingerprint_source=self.fingerprint_parent,
+            fingerprint_new=self.fingerprint_child,
+            arrow_color=GUIConstants.BIP85_COLOR,
+            screen_y=self.top_nav.height + 32,
+        )
+        identities = [component for component in transition.components if isinstance(component, IconTextLine)]
+        for text, identity in zip([_("Parent"), _("Child")], identities):
+            self.components.append(TextArea(
+                text=text, font_size=14, screen_x=identity.screen_x,
+                screen_y=self.top_nav.height + 8, width=identity.width,
+                edge_padding=0, auto_line_break=False,
+            ))
+        self.components.append(transition)
+        self.components.append(TextArea(
+            text=_("Child #{}").format(self.child_index),
+            screen_y=self.top_nav.height + 76, font_size=20,
+        ))
+        self.components.append(TextArea(
+            # TRANSLATOR_NOTE: Number of BIP-39 words in a derived BIP-85 child seed.
+            text=_("{} words").format(self.num_words),
+            screen_y=self.top_nav.height + 106, font_size=18,
+        ))
+
+
+@dataclass
+class SeedBIP85ChildMenuScreen(ButtonListScreen):
+    child_index: int = None
+    num_words: int = None
+
+    def __post_init__(self):
+        self.title = _("BIP-85 Child")
+        self.is_bottom_list = True
+        super().__post_init__()
+        if self.child_index is not None and self.num_words is not None:
+            self.components.append(TextArea(
+                text=_("Child #{}").format(self.child_index),
+                screen_y=self.top_nav.height + 24, font_size=20,
+            ))
+            self.components.append(TextArea(
+                text=_("{} words").format(self.num_words),
+                screen_y=self.top_nav.height + 58, font_size=18,
+            ))
+
+
+@dataclass
 class SeedBIP85SelectChildIndexScreen(KeyboardScreen):
+    initial_index: int = None
+
     def __post_init__(self):
         self.title = _("BIP-85 Index")
-        self.user_input = ""
+        self.initial_value = "" if self.initial_index is None else str(self.initial_index)
 
         # Specify the keys in the keyboard
         self.rows = 3
@@ -556,14 +659,16 @@ class SeedBIP85SelectChildIndexScreen(KeyboardScreen):
 
 @dataclass
 class SeedWordsBackupTestPromptScreen(ButtonListScreen):
+    is_bip85_child: bool = False
+
     def __post_init__(self):
-        self.title = _("Verify Backup?")
+        self.title = _("Load Child Seed?") if self.is_bip85_child else _("Verify Backup?")
         self.show_back_button = False
         self.is_bottom_list = True
         super().__post_init__()
 
         self.components.append(TextArea(
-            text=_("Optionally verify that your mnemonic backup is correct."),
+            text=_("Verify your backup, or load this child seed now.") if self.is_bip85_child else _("Optionally verify that your mnemonic backup is correct."),
             screen_y=self.top_nav.height,
             is_text_centered=True,
         ))
@@ -605,6 +710,7 @@ class SeedExportXpubDetailsScreen(WarningEdgesMixin, ButtonListScreen):
 
         # Set up the fingerprint and passphrase displays
         self.fingerprint_line = IconTextLine(
+            lifehash_fingerprint=self.fingerprint,
             icon_name=SeedSignerIconConstants.FINGERPRINT,
             icon_color=GUIConstants.INFO_COLOR,
             # TRANSLATOR_NOTE: Short for "BIP-32 Master Fingerprint"
@@ -1054,67 +1160,160 @@ class SeedReviewPassphraseScreen(ButtonListScreen):
     fingerprint_without: str = None
     fingerprint_with: str = None
     passphrase: str = None
+    page_index: int = 0
+
+    @staticmethod
+    def passphrase_pages(passphrase: str) -> list[str]:
+        # Two fixed-width lines fit beneath the wallet identities and above the
+        # two review buttons. Whitespace remains visible on every page.
+        if not passphrase:
+            return [""]
+        visible = passphrase.replace(" ", "\u2589") if passphrase != passphrase.strip() or "  " in passphrase else passphrase
+        return [visible[i:i + 44] for i in range(0, len(visible), 44)]
 
     def __post_init__(self):
-        # Customize defaults
+        pages = self.passphrase_pages(self.passphrase)
         self.title = _("Verify Passphrase")
+        if len(pages) > 1:
+            self.title = _("Passphrase: {}/{}").format(self.page_index + 1, len(pages))
         self.is_bottom_list = True
-
         super().__post_init__()
 
-        self.components.append(IconTextLine(
-            icon_name=SeedSignerIconConstants.FINGERPRINT,
-            icon_color=GUIConstants.INFO_COLOR,
-            # TRANSLATOR_NOTE: Describes the effect of applying a BIP-39 passphrase; it changes the seed's fingerprint
-            label_text=_("changes fingerprint"),
-            value_text=f"{self.fingerprint_without} >> {self.fingerprint_with}",
-            is_text_centered=True,
-            screen_y = self.buttons[0].screen_y - GUIConstants.COMPONENT_PADDING - int(GUIConstants.get_body_font_size()*2.5)
+        self.components.append(FingerprintTransition(
+            fingerprint_source=self.fingerprint_without,
+            fingerprint_new=self.fingerprint_with,
+            arrow_color=GUIConstants.PASSPHRASE_COLOR,
+            screen_y=self.top_nav.height,
         ))
-
-        if self.passphrase != self.passphrase.strip() or "  " in self.passphrase:
-            self.passphrase = self.passphrase.replace(" ", "\u2589")
-        available_height = self.components[-1].screen_y - self.top_nav.height + GUIConstants.COMPONENT_PADDING
-        max_font_size = GUIConstants.get_top_nav_title_font_size() + 8
-        min_font_size = GUIConstants.get_top_nav_title_font_size() - 4
-        font_size = max_font_size
-        max_lines = 3
-        passphrase = [self.passphrase]
-        found_solution = False
-        for font_size in range(max_font_size, min_font_size, -2):
-            if found_solution:
-                break
-            font = Fonts.get_font(font_name=GUIConstants.FIXED_WIDTH_FONT_NAME, size=font_size)
-            left, top, right, bottom  = font.getbbox("X")
-            char_width, char_height = right - left, bottom - top
-            for num_lines in range(1, max_lines+1):
-                # Break the passphrase into n lines
-                chars_per_line = math.ceil(len(self.passphrase) / num_lines)
-                passphrase = []
-                for i in range(0, len(self.passphrase), chars_per_line):
-                    passphrase.append(self.passphrase[i:i+chars_per_line])
-                
-                # See if it fits in this configuration
-                if char_width * len(passphrase[0]) <= self.canvas_width - 2*GUIConstants.EDGE_PADDING:
-                    # Width is good...
-                    if num_lines * char_height <= available_height:
-                        # And the height is good!
-                        found_solution = True
-                        break
-
-        # Set up each line of text
-        screen_y = self.top_nav.height + int((available_height - char_height*num_lines)/2) - GUIConstants.COMPONENT_PADDING
-        for line in passphrase:
+        self.components.append(TextArea(
+            text=_("Passphrase"), font_size=14,
+            screen_y=self.top_nav.height + 24, auto_line_break=False,
+        ))
+        page = pages[self.page_index]
+        for index, line in enumerate([page[i:i + 22] for i in range(0, len(page), 22)]):
             self.components.append(TextArea(
                 text=line,
                 font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
-                font_size=font_size,
-                font_color="orange",
-                is_text_centered=True,
-                screen_y=screen_y,
+                font_size=18,
+                font_color=GUIConstants.PASSPHRASE_COLOR,
+                preserve_font_color=True,
+                screen_y=self.top_nav.height + 40 + index * 20,
+                auto_line_break=False,
             ))
-            screen_y += char_height + 2
 
+
+@dataclass
+class SeedConfirmPassphraseScreen(ButtonListScreen):
+    """Review a candidate without ever changing the currently loaded wallet."""
+    fingerprint_without: str = None
+    fingerprint_new: str = None
+    passphrase: str = ""
+    page_index: int = 0
+
+    @staticmethod
+    def passphrase_pages(passphrase: str) -> list[str]:
+        # Fixed-width review, two 22-character lines per page at 18px. Preserve
+        # significant whitespace; a blank value alone means remove the passphrase.
+        if not passphrase:
+            return [""]
+        visible = passphrase.replace(" ", "\u2589") if passphrase != passphrase.strip() or "  " in passphrase else passphrase
+        return [visible[i:i + 44] for i in range(0, len(visible), 44)]
+
+    def __post_init__(self):
+        pages = self.passphrase_pages(self.passphrase)
+        self.title = _("Change Wallet?") if self.passphrase else _("Remove Passphrase?")
+        if len(pages) > 1:
+            # TRANSLATOR_NOTE: Page number while reviewing a long BIP-39 passphrase.
+            self.title = _("Passphrase: {}/{}").format(self.page_index + 1, len(pages))
+        self.is_bottom_list = True
+        super().__post_init__()
+
+        if not self.passphrase:
+            self.components.append(TextArea(
+                text=_("Return to wallet without passphrase?"),
+                screen_y=self.top_nav.height,
+                height=50,
+                font_size=17,
+            ))
+            self.components.append(IconTextLine(
+                lifehash_fingerprint=self.fingerprint_new,
+                icon_name=SeedSignerIconConstants.FINGERPRINT,
+                icon_color=GUIConstants.INFO_COLOR,
+                value_text=self.fingerprint_new,
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=24,
+                is_text_centered=True,
+                screen_y=self.top_nav.height + 64,
+            ))
+            return
+
+        self.components.append(FingerprintTransition(
+            fingerprint_source=self.fingerprint_without,
+            fingerprint_new=self.fingerprint_new,
+            arrow_color=GUIConstants.PASSPHRASE_COLOR,
+            screen_y=self.top_nav.height,
+        ))
+        self.components.append(TextArea(
+            text=_("Passphrase"), font_size=14,
+            screen_y=self.top_nav.height + 24, auto_line_break=False,
+        ))
+        page = pages[self.page_index]
+        for index, line in enumerate([page[i:i + 22] for i in range(0, len(page), 22)]):
+            self.components.append(TextArea(
+                text=line,
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=18,
+                font_color=GUIConstants.PASSPHRASE_COLOR,
+                preserve_font_color=True,
+                screen_y=self.top_nav.height + 40 + index * 20,
+                auto_line_break=False,
+            ))
+
+
+@dataclass
+class SeedWalletSaveScreen(ButtonListScreen):
+    """Choose how to retain a reviewed wallet, showing only its public identity."""
+    fingerprint_source: str = None
+    fingerprint_new: str = None
+    arrow_color: str = GUIConstants.BODY_FONT_COLOR
+
+    def __post_init__(self):
+        self.title = _("Load Wallet")
+        self.is_bottom_list = True
+        super().__post_init__()
+
+        self.components.append(FingerprintHeader(
+            fingerprint_source=self.fingerprint_source,
+            fingerprint=self.fingerprint_new,
+            arrow_color=self.arrow_color,
+            screen_y=self.top_nav.height,
+        ))
+        self.components.append(TextArea(
+            text=_("Replace this entry or keep both in memory?"),
+            font_size=16,
+            screen_y=self.top_nav.height + 28,
+            height=42,
+        ))
+
+
+@dataclass
+class SeedPassphraseSaveScreen(SeedWalletSaveScreen):
+    fingerprint_without: str = None
+    arrow_color: str = GUIConstants.PASSPHRASE_COLOR
+
+    def __post_init__(self):
+        self.fingerprint_source = self.fingerprint_without
+        super().__post_init__()
+
+
+@dataclass
+class SeedBIP85SaveChildScreen(SeedWalletSaveScreen):
+    fingerprint_parent: str = None
+    arrow_color: str = GUIConstants.BIP85_COLOR
+
+    def __post_init__(self):
+        self.fingerprint_source = self.fingerprint_parent
+        super().__post_init__()
 
 
 @dataclass
@@ -1575,8 +1774,10 @@ class LoadMultisigWalletDescriptorScreen(ButtonListScreen):
 
 @dataclass
 class MultisigWalletDescriptorScreen(ButtonListScreen):
+    FINGERPRINTS_PER_PAGE = 4
     policy: str = None
     fingerprints: List[str] = None
+    page_index: int = 0
 
     def __post_init__(self):
         self.title = _("Descriptor Loaded")
@@ -1592,15 +1793,28 @@ class MultisigWalletDescriptorScreen(ButtonListScreen):
             is_text_centered=True,
         ))
 
-        self.components.append(IconTextLine(
-            label_text=_("Signing Keys"),
-            value_text=" ".join(self.fingerprints),
-            font_size=24,
-            font_name=GUIConstants.FIXED_WIDTH_EMPHASIS_FONT_NAME,
+        pages = math.ceil(len(self.fingerprints) / self.FINGERPRINTS_PER_PAGE)
+        label = _("Signing Keys")
+        if pages > 1:
+            label += f" {self.page_index + 1}/{pages}"
+        self.components.append(TextArea(
+            text=label,
+            font_size=18,
             screen_y=self.components[-1].screen_y + self.components[-1].height + 2*GUIConstants.COMPONENT_PADDING,
             is_text_centered=True,
-            auto_line_break=True,
         ))
+        row_y = self.components[-1].screen_y + self.components[-1].height + GUIConstants.COMPONENT_PADDING
+        start = self.page_index * self.FINGERPRINTS_PER_PAGE
+        for index, fingerprint in enumerate(self.fingerprints[start:start + self.FINGERPRINTS_PER_PAGE]):
+            self.components.append(IconTextLine(
+                lifehash_fingerprint=fingerprint, lifehash_size=24,
+                value_text=fingerprint, font_size=16,
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                screen_x=GUIConstants.EDGE_PADDING + (index % 2) * (self.canvas_width // 2),
+                screen_y=row_y + (index // 2) * 32,
+                width=self.canvas_width // 2 - 2 * GUIConstants.EDGE_PADDING,
+                is_text_centered=True,
+            ))
 
 
 

@@ -35,13 +35,15 @@ class PSBTSelectSeedView(View):
         seeds = self.controller.storage.seeds
         button_data = []
         for seed in seeds:
-            button_str = seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+            fingerprint = seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+            button_str = fingerprint
             if not PSBTParser.has_matching_input_fingerprint(psbt=self.controller.psbt, seed=seed, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK)):
                 # Doesn't look like this seed can sign the current PSBT
                 # TRANSLATOR_NOTE: Inserts fingerprint w/"?" to indicate that this seed can't sign the current PSBT
                 button_str = _("{} (?)").format(button_str)
 
-            button_data.append(ButtonOption(button_str, SeedSignerIconConstants.FINGERPRINT))
+            button_data.append(ButtonOption(button_str, SeedSignerIconConstants.FINGERPRINT,
+                                            lifehash_fingerprint=fingerprint))
 
         button_data.append(self.SCAN_SEED)
         button_data.append(self.TYPE_12WORD)

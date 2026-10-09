@@ -218,7 +218,41 @@ class Controller(Singleton):
 
 
     def discard_seed(self, seed: Seed):
-        self.storage.seeds.remove(seed)
+        # A stale view must not discard an equal wallet that was loaded later.
+        index = next((i for i, loaded in enumerate(self.storage.seeds) if loaded is seed), None)
+        if index is None:
+            raise ValueError("The selected seed is no longer loaded")
+        del self.storage.seeds[index]
+
+
+    def replace_seed(self, original: Seed, replacement: Seed) -> Seed:
+        selected_seed = self.storage.replace_seed(original, replacement)
+        if selected_seed is original:
+            return original
+
+        self.clear_wallet_state()
+        return selected_seed
+
+
+    def load_seed(self, seed: Seed) -> Seed:
+        """Select a separately loaded seed, preserving all existing seeds."""
+        selected_seed = self.storage.add_seed(seed)
+        self.clear_wallet_state()
+        return selected_seed
+
+
+    def clear_wallet_state(self):
+        # Wallet-specific state and navigation may retain the old seed or its
+        # derived addresses. Re-enter those flows with the newly selected wallet.
+        self.psbt = None
+        self.psbt_parser = None
+        self.psbt_seed = None
+        self.resume_main_flow = None
+        self.multisig_wallet_descriptor = None
+        self.unverified_address = None
+        self.address_explorer_data = None
+        self.sign_message_data = None
+        self.clear_back_stack()
 
 
     def pop_prev_from_back_stack(self):
@@ -337,6 +371,9 @@ class Controller(Singleton):
                     # to the next View so it should be as if this View never happened.
                     current_view = self.back_stack.pop()
                     logger.info(f"Skipping current view: {current_view}")
+                    # A redirected View may own sensitive temporary seed state.
+                    # Do not retain it in this loop after removing it from history.
+                    del current_view
 
                 # Hang on to this reference...
                 clear_history = next_destination.clear_history

@@ -22,8 +22,17 @@ class Seed:
     def __init__(self,
                  mnemonic: List[str] = None,
                  passphrase: str = "",
-                 wordlist_language_code: str = SettingsConstants.WORDLIST_LANGUAGE__ENGLISH) -> None:
+                 wordlist_language_code: str = SettingsConstants.WORDLIST_LANGUAGE__ENGLISH,
+                 is_bip85_child: bool = False,
+                 bip85_parent_fingerprint: str = None,
+                 bip85_child_index: int = None,
+                 bip85_num_words: int = None) -> None:
         self._wordlist_language_code = wordlist_language_code
+        # Session metadata only; keep no reference to the deriving parent.
+        self.is_bip85_child = is_bip85_child or bip85_parent_fingerprint is not None
+        self.bip85_parent_fingerprint = bip85_parent_fingerprint
+        self.bip85_child_index = bip85_child_index
+        self.bip85_num_words = bip85_num_words
 
         if not mnemonic:
             raise Exception("Must initialize a Seed with a mnemonic List[str]")
@@ -148,6 +157,20 @@ class Seed:
     def get_fingerprint(self, network: str = SettingsConstants.MAINNET) -> str:
         root = bip32.HDKey.from_seed(self.seed_bytes, version=NETWORKS[SettingsConstants.map_network_to_embit(network)]["xprv"])
         return hexlify(root.child(0).fingerprint).decode('utf-8')
+
+
+    def get_fingerprint_without_passphrase(self, network: str = SettingsConstants.MAINNET) -> str:
+        """Derive the unextended seed's fingerprint without changing this wallet."""
+        if not self.has_passphrase:
+            return self.get_fingerprint(network)
+
+        # Keep the derivation type (including Electrum) and leave the loaded seed
+        # untouched throughout derivation, so other references remain valid.
+        return type(self)(
+            mnemonic=self.mnemonic_list,
+            passphrase="",
+            wordlist_language_code=self.wordlist_language_code,
+        ).get_fingerprint(network)
 
 
     def get_xpub(self, wallet_path: str = '/', network: str = SettingsConstants.MAINNET):
