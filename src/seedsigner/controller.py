@@ -218,7 +218,25 @@ class Controller(Singleton):
 
 
     def discard_seed(self, seed: Seed):
-        self.storage.seeds.remove(seed)
+        # A stale view must not discard an equal wallet that was loaded later.
+        index = next((i for i, loaded in enumerate(self.storage.seeds) if loaded is seed), None)
+        if index is None:
+            raise ValueError("The selected seed is no longer loaded")
+        del self.storage.seeds[index]
+
+
+    def clear_wallet_state(self):
+        # Wallet-specific state and navigation may retain the old seed or its
+        # derived addresses. Re-enter those flows with the newly selected wallet.
+        self.psbt = None
+        self.psbt_parser = None
+        self.psbt_seed = None
+        self.resume_main_flow = None
+        self.multisig_wallet_descriptor = None
+        self.unverified_address = None
+        self.address_explorer_data = None
+        self.sign_message_data = None
+        self.clear_back_stack()
 
 
     def pop_prev_from_back_stack(self):

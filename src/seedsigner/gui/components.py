@@ -1495,7 +1495,9 @@ class Button(BaseComponent):
                 background_color=self.selected_color,
                 screen_x=self.screen_x,
                 screen_y=self.screen_y + self.text_y_offset,
-                width=self.width,
+                # Keep both the rendered label and its scrolling viewport clear
+                # of the right icon, including labels that only just overlap it.
+                width=self.width - (self.right_icon.width + icon_padding if self.right_icon_name else 0),
                 height=self.text_height if self.icon_name and not self.is_icon_inline else self.height,
                 min_text_x=self.text_x if self.icon_name and self.is_icon_inline else GUIConstants.COMPONENT_PADDING,
                 is_text_centered=self.is_text_centered,
