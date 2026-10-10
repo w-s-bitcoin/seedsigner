@@ -189,3 +189,48 @@ class TestLifeHashViewFlows(FlowTest):
         ])
 
         assert self.controller.psbt_seed is signer
+
+
+class TestPassphraseReviewColor(BaseTest):
+    @pytest.mark.parametrize("initial_review", [True, False])
+    def test_rendered_passphrase_keeps_arrow_color_after_supersampling(self, initial_review, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from PIL import Image, ImageColor, ImageDraw
+
+        from seedsigner.gui.components import FingerprintArrow, FingerprintTransition, GUIConstants, TextArea
+        from seedsigner.gui.renderer import Renderer
+        from seedsigner.gui.screens.screen import ButtonOption
+        from seedsigner.gui.screens.seed_screens import SeedConfirmPassphraseScreen, SeedReviewPassphraseScreen
+
+        # Keep the native fonts and Pillow rendering; replace only the hardware
+        # display with a real image canvas. No button loop or background threads.
+        renderer = MagicMock()
+        renderer.canvas_width = renderer.canvas_height = 240
+        renderer.canvas = Image.new("RGB", (240, 240), GUIConstants.BACKGROUND_COLOR)
+        renderer.draw = ImageDraw.Draw(renderer.canvas)
+        monkeypatch.setattr(Renderer, "get_instance", lambda: renderer)
+        passphrase = "Passphrase123!lIgy@"
+        kwargs = dict(fingerprint_without="73c5da0a", passphrase=passphrase,
+                      button_data=[ButtonOption("Edit"), ButtonOption("Done")])
+        if initial_review:
+            screen = SeedReviewPassphraseScreen(fingerprint_with="0d777ffb", **kwargs)
+        else:
+            screen = SeedConfirmPassphraseScreen(fingerprint_new="0d777ffb", **kwargs)
+        screen._render()
+
+        text = next(component for component in screen.components
+                    if isinstance(component, TextArea) and component.text == passphrase)
+        transition = next(component for component in screen.components if isinstance(component, FingerprintTransition))
+        arrow = next(component for component in transition.components if isinstance(component, FingerprintArrow))
+        expected_color = ImageColor.getrgb(GUIConstants.PASSPHRASE_COLOR)
+        arrow_pixel = renderer.canvas.getpixel((arrow.screen_x + 10, arrow.screen_y + 10))
+        text_colors = set(text.rendered_text_img.convert("RGB").getdata())
+
+        assert text.supersampling_factor > 1
+        assert arrow_pixel == expected_color
+        assert max(text_colors, key=sum) == arrow_pixel
+        # Sharpening RGB directly previously increased green/blue independently
+        # of the saturated red channel, visibly changing the glyph hue.
+        assert all(all(channel <= target for channel, target in zip(pixel, expected_color))
+                   for pixel in text_colors)

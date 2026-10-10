@@ -22,15 +22,45 @@ class SeedStorage:
 
     def finalize_pending_seed(self) -> Seed:
         # Store the pending seed and return it
-        seed = self.pending_seed
-        if seed not in self.seeds:
-            self.seeds.append(seed)
+        seed = self.add_seed(self.pending_seed)
         self.pending_seed = None
+        return seed
+
+
+    def add_seed(self, seed: Seed) -> Seed:
+        """Load a separate seed without disturbing pending mnemonic entry."""
+        for loaded_seed in self.seeds:
+            if loaded_seed == seed:
+                # Compare full seed bytes and return the stored instance. Neither
+                # fingerprints nor derivation relationships identify duplicates.
+                return loaded_seed
+        self.seeds.append(seed)
         return seed
 
 
     def clear_pending_seed(self):
         self.pending_seed = None
+
+
+    def replace_seed(self, original: Seed, replacement: Seed) -> Seed:
+        """Commit a reviewed wallet change and return the selected loaded instance."""
+        # A stale View must not replace an equal seed that was loaded later.
+        original_index = next((i for i, seed in enumerate(self.seeds) if seed is original), None)
+        if original_index is None:
+            raise ValueError("The selected seed is no longer loaded")
+
+        if replacement == original:
+            return original
+
+        # Seed equality compares the full derived seed bytes. A master fingerprint is
+        # too short to safely decide whether two loaded wallets are the same.
+        for seed in self.seeds:
+            if seed == replacement:
+                del self.seeds[original_index]
+                return seed
+
+        self.seeds[original_index] = replacement
+        return replacement
 
 
     def validate_mnemonic(self, mnemonic: List[str]) -> bool:

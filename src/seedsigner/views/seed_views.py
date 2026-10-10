@@ -7,13 +7,13 @@ from gettext import gettext as _
 
 from embit.descriptor import Descriptor
 
-from seedsigner.gui.components import FontAwesomeIconConstants, SeedSignerIconConstants
+from seedsigner.gui.components import FontAwesomeIconConstants, GUIConstants, SeedSignerIconConstants
 from seedsigner.gui.screens import (RET_CODE__BACK_BUTTON, ButtonListScreen,
     WarningScreen, DireWarningScreen, seed_screens)
 from seedsigner.gui.screens.screen import ButtonOption, ButtonOptionWithoutTranslation
 from seedsigner.models.encode_qr import CompactSeedQrEncoder, GenericStaticQrEncoder, SeedQrEncoder, SpecterLegacyXPubQrEncoder, StaticXpubQrEncoder, UrXpubQrEncoder
 from seedsigner.models.qr_type import QRType
-from seedsigner.models.seed import Seed
+from seedsigner.models.seed import ElectrumSeed, Seed
 from seedsigner.models.settings import Settings, SettingsConstants
 from seedsigner.models.settings_definition import SettingsDefinition
 from seedsigner.models.threads import BaseThread, ThreadsafeCounter
@@ -29,9 +29,22 @@ class SeedsMenuView(View):
     def __init__(self):
         super().__init__()
         self.seeds = []
+        network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
         for seed in self.controller.storage.seeds:
+            fingerprint = seed.get_fingerprint(network)
+            fingerprints = []
+            arrow_colors = []
+            selected_arrow_colors = []
+            if seed.has_passphrase:
+                fingerprints.append(seed.get_fingerprint_without_passphrase(network))
+                arrow_colors.append(GUIConstants.PASSPHRASE_COLOR)
+                selected_arrow_colors.append(GUIConstants.PASSPHRASE_COLOR_SELECTED)
+            fingerprints.append(fingerprint)
             self.seeds.append({
-                "fingerprint": seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK))
+                "fingerprint": fingerprint,
+                "lifehash_fingerprints": tuple(fingerprints),
+                "lifehash_arrow_colors": tuple(arrow_colors),
+                "selected_lifehash_arrow_colors": tuple(selected_arrow_colors),
             })
 
 
@@ -42,8 +55,14 @@ class SeedsMenuView(View):
 
         button_data = []
         for seed in self.seeds:
-            button_data.append(ButtonOption(seed["fingerprint"], SeedSignerIconConstants.FINGERPRINT,
-                                            lifehash_fingerprint=seed["fingerprint"]))
+            button_data.append(ButtonOption(
+                seed["fingerprint"],
+                lifehash_fingerprints=seed["lifehash_fingerprints"],
+                lifehash_arrow_colors=seed["lifehash_arrow_colors"],
+                selected_lifehash_arrow_colors=seed["selected_lifehash_arrow_colors"],
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=20,
+            ))
         button_data.append(self.LOAD)
 
         selected_menu_num = self.run_screen(
@@ -310,20 +329,8 @@ class SeedFinalizeView(View):
         super().__init__()
         self.seed = self.controller.storage.get_pending_seed()
 
-        if not self.seed.has_passphrase:
-            # Expected normal user flow. A freshly-loaded seed has no passphrase yet, so
-            # we can just get the fingerprint directly.
-            self.fingerprint = self.seed.get_fingerprint(network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
-
-        else:
-            # This view should display the "naked" seed's fingerprint. Normally the
-            # just-loaded seed would be naked, but this is special handling for the
-            # screenshot generator which creates a pending seed w/a passphrase already
-            # set.
-            passphrase = self.seed.passphrase
-            self.seed.set_passphrase("")
-            self.fingerprint = self.seed.get_fingerprint(network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
-            self.seed.set_passphrase(passphrase)
+        self.fingerprint = self.seed.get_fingerprint_without_passphrase(
+            network=self.settings.get_value(SettingsConstants.SETTING__NETWORK))
 
 
     def run(self):
@@ -421,22 +428,23 @@ class SeedReviewPassphraseView(View):
     """
     EDIT = ButtonOption("Edit passphrase")
     DONE = ButtonOption("Done")
+    NEXT = ButtonOption("Next")
 
-    def __init__(self):
+    def __init__(self, page_index: int = 0):
         super().__init__()
         self.seed = self.controller.storage.get_pending_seed()
+        self.page_index = page_index
 
 
     def run(self):
-        # Get the before/after fingerprints
+        # Derive both display identities without changing the pending seed.
         network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
-        passphrase = self.seed.passphrase
         fingerprint_with = self.seed.get_fingerprint(network=network)
-        self.seed.set_passphrase("")
-        fingerprint_without = self.seed.get_fingerprint(network=network)
-        self.seed.set_passphrase(passphrase)
+        fingerprint_without = self.seed.get_fingerprint_without_passphrase(network=network)
         
-        button_data = [self.EDIT, self.DONE]
+        pages = seed_screens.SeedReviewPassphraseScreen.passphrase_pages(self.seed.passphrase)
+        last_page = self.page_index == len(pages) - 1
+        button_data = [self.EDIT, self.DONE if last_page else self.NEXT]
 
         # Because we have an explicit "Edit" button, we disable "BACK" to keep the
         # routing options sane.
@@ -445,12 +453,16 @@ class SeedReviewPassphraseView(View):
             fingerprint_without=fingerprint_without,
             fingerprint_with=fingerprint_with,
             passphrase=self.seed.passphrase,
+            page_index=self.page_index,
             button_data=button_data,
             show_back_button=False,
         )
 
         if button_data[selected_menu_num] == self.EDIT:
             return Destination(SeedAddPassphraseView)
+
+        elif button_data[selected_menu_num] == self.NEXT:
+            return Destination(SeedReviewPassphraseView, view_args={"page_index": self.page_index + 1})
         
         elif button_data[selected_menu_num] == self.DONE:
             seed = self.controller.storage.finalize_pending_seed()
@@ -458,6 +470,174 @@ class SeedReviewPassphraseView(View):
             
 
             
+class SeedLoadedPassphraseView(View):
+    """Edit a private candidate; never put passphrase text in logged Destinations."""
+
+    def __init__(self, seed: Seed, passphrase: str = None, candidate: Seed = None):
+        super().__init__()
+        self.seed = seed
+        unavailable = self.validate_source()
+        if unavailable:
+            self.set_redirect(unavailable)
+            return
+
+        # Keep finalized Seeds immutable until the user explicitly confirms. In
+        # particular, existing PSBT parsers may still reference the source object.
+        self.candidate = candidate if candidate is not None else Seed(
+            mnemonic=seed.mnemonic_list,
+            passphrase=seed.passphrase if passphrase is None else passphrase,
+            wordlist_language_code=seed.wordlist_language_code,
+        )
+
+    def validate_source(self):
+        if not any(loaded is self.seed for loaded in self.controller.storage.seeds):
+            return Destination(SeedsMenuView, clear_history=True)
+        if (isinstance(self.seed, ElectrumSeed)
+                or self.settings.get_value(SettingsConstants.SETTING__PASSPHRASE) == SettingsConstants.OPTION__DISABLED):
+            return Destination(SeedOptionsView, view_args={"seed": self.seed}, clear_history=True)
+        return None
+
+    def destination(self, view_cls, **kwargs):
+        return Destination(view_cls, view_args={"seed": self.seed, "candidate": self.candidate, **kwargs})
+
+    def cancel(self):
+        # Clearing history drops references to the discarded candidate too.
+        return Destination(SeedOptionsView, view_args={"seed": self.seed}, clear_history=True)
+
+
+class SeedPassphraseMenuView(SeedLoadedPassphraseView):
+    EDIT = ButtonOption("Edit passphrase")
+    CHANGE = ButtonOption("Different passphrase")
+    REMOVE = ButtonOption("Remove passphrase", button_label_color="red")
+
+    def __init__(self, seed: Seed):
+        super().__init__(seed)
+        if not self.has_redirect and not seed.has_passphrase:
+            self.set_redirect(self.destination(SeedEditPassphraseView))
+
+    def run(self):
+        button_data = [self.EDIT, self.CHANGE, self.REMOVE]
+        selected = self.run_screen(ButtonListScreen, title=_("BIP-39 Passphrase"), button_data=button_data)
+        if selected == RET_CODE__BACK_BUTTON:
+            return self.cancel()
+        if button_data[selected] == self.EDIT:
+            return self.destination(SeedEditPassphraseView)
+        self.candidate.set_passphrase("")
+        if button_data[selected] == self.CHANGE:
+            return self.destination(SeedEditPassphraseView)
+        return self.destination(SeedConfirmPassphraseView)
+
+
+class SeedEditPassphraseView(SeedLoadedPassphraseView):
+    def run(self):
+        result = self.run_screen(seed_screens.SeedAddPassphraseScreen,
+                                 passphrase=self.candidate.passphrase,
+                                 title=self.seed.passphrase_label)
+        self.candidate.set_passphrase(result["passphrase"])
+        if "is_back_button" in result:
+            return self.destination(SeedCancelPassphraseView)
+        return self.destination(SeedConfirmPassphraseView)
+
+
+class SeedCancelPassphraseView(SeedLoadedPassphraseView):
+    KEEP_EDITING = ButtonOption("Keep editing")
+    DISCARD = ButtonOption("Discard changes", button_label_color="red")
+
+    def run(self):
+        button_data = [self.KEEP_EDITING, self.DISCARD]
+        selected = self.run_screen(WarningScreen, title=_("Discard Changes?"),
+                                   status_headline=None,
+                                   text=_("The loaded wallet will stay unchanged."),
+                                   show_back_button=False, button_data=button_data)
+        if button_data[selected] == self.KEEP_EDITING:
+            return self.destination(SeedEditPassphraseView)
+        return self.cancel()
+
+
+class SeedConfirmPassphraseView(SeedLoadedPassphraseView):
+    EDIT = ButtonOption("Edit passphrase")
+    APPLY = ButtonOption("Continue")
+    CANCEL = ButtonOption("Cancel")
+    NEXT = ButtonOption("Next")
+    REMOVE = ButtonOption("Remove passphrase", button_label_color="red")
+
+    def __init__(self, seed: Seed, passphrase: str = None, candidate: Seed = None, page_index: int = 0):
+        super().__init__(seed, passphrase, candidate)
+        self.page_index = page_index
+
+    def run(self):
+        pages = seed_screens.SeedConfirmPassphraseScreen.passphrase_pages(self.candidate.passphrase_display)
+        last_page = self.page_index == len(pages) - 1
+        button_data = [self.APPLY if last_page else self.NEXT, self.EDIT, self.CANCEL]
+        if not self.candidate.has_passphrase:
+            button_data = [self.CANCEL, self.REMOVE]
+        network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+        # The review always starts from the mnemonic without a passphrase,
+        # even when replacing an existing one. Derive this display identity
+        # separately: signing state may still reference the loaded Seed.
+        fingerprint_without = self.seed.get_fingerprint_without_passphrase(network)
+        selected = self.run_screen(seed_screens.SeedConfirmPassphraseScreen,
+                                   fingerprint_without=fingerprint_without,
+                                   fingerprint_new=self.candidate.get_fingerprint(network),
+                                   passphrase=self.candidate.passphrase_display,
+                                   page_index=self.page_index,
+                                   button_data=button_data,
+                                   selected_button=0,
+                                   show_back_button=False)
+        # Recheck after input before removal or entering the save choice. The
+        # source may have been discarded or editing disabled while this ran.
+        unavailable = self.validate_source()
+        if unavailable:
+            return unavailable
+        if selected == RET_CODE__BACK_BUTTON or button_data[selected] == self.CANCEL:
+            return self.cancel()
+        if button_data[selected] == self.EDIT:
+            return self.destination(SeedEditPassphraseView)
+        if button_data[selected] == self.NEXT:
+            return self.destination(SeedConfirmPassphraseView, page_index=self.page_index + 1)
+        if button_data[selected] == self.APPLY:
+            return self.destination(SeedPassphraseSaveView)
+
+        # Removal keeps its explicit confirmation and returns to the unextended
+        # wallet without an additional save choice.
+        seed = self.controller.replace_seed(self.seed, self.candidate)
+        return Destination(SeedOptionsView, view_args={"seed": seed}, clear_history=True)
+
+
+class SeedPassphraseSaveView(SeedLoadedPassphraseView):
+    REPLACE = ButtonOption("Replace current")
+    LOAD_SEPARATELY = ButtonOption("Load separately")
+    CANCEL = ButtonOption("Cancel")
+
+    def __init__(self, seed: Seed, passphrase: str = None, candidate: Seed = None):
+        super().__init__(seed, passphrase, candidate)
+        if not self.has_redirect and not self.candidate.has_passphrase:
+            self.set_redirect(self.destination(SeedConfirmPassphraseView))
+
+    def run(self):
+        button_data = [self.REPLACE, self.LOAD_SEPARATELY, self.CANCEL]
+        network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+        selected = self.run_screen(
+            seed_screens.SeedPassphraseSaveScreen,
+            fingerprint_without=self.seed.get_fingerprint_without_passphrase(network),
+            fingerprint_new=self.candidate.get_fingerprint(network),
+            button_data=button_data,
+            selected_button=0,
+        )
+        unavailable = self.validate_source()
+        if unavailable:
+            return unavailable
+        if selected == RET_CODE__BACK_BUTTON:
+            return Destination(BackStackView)
+        if button_data[selected] == self.CANCEL:
+            return self.cancel()
+        if button_data[selected] == self.LOAD_SEPARATELY:
+            seed = self.controller.load_seed(self.candidate)
+        else:
+            seed = self.controller.replace_seed(self.seed, self.candidate)
+        return Destination(SeedOptionsView, view_args={"seed": seed}, clear_history=True)
+
+
 class SeedDiscardView(View):
     KEEP = ButtonOption("Keep seed")
     DISCARD = ButtonOption("Discard", button_label_color="red")
@@ -552,6 +732,7 @@ class SeedOptionsView(View):
     SIGN_MESSAGE = ButtonOption("Sign message")
     BACKUP = ButtonOption("Backup seed", right_icon_name=SeedSignerIconConstants.CHEVRON_RIGHT)
     BIP85_CHILD_SEED = ButtonOption("BIP-85 child seed")
+    PASSPHRASE = ButtonOption("BIP-39 Passphrase", right_icon_name=SeedSignerIconConstants.CHEVRON_RIGHT)
     DISCARD = ButtonOption("Discard seed", button_label_color="red")
 
 
@@ -604,12 +785,31 @@ class SeedOptionsView(View):
         if self.settings.get_value(SettingsConstants.SETTING__BIP85_CHILD_SEEDS) == SettingsConstants.OPTION__ENABLED and self.seed.bip85_supported:
             button_data.append(self.BIP85_CHILD_SEED)
 
+        # Follow the existing passphrase setting, including Required. Keep the
+        # neutral label near the bottom as discussed in #419.
+        if (not isinstance(self.seed, ElectrumSeed)
+                and self.settings.get_value(SettingsConstants.SETTING__PASSPHRASE) != SettingsConstants.OPTION__DISABLED):
+            button_data.append(self.PASSPHRASE)
+
         button_data.append(self.DISCARD)
+
+        network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+        checked_button_colors = {}
+        selected_checked_button_colors = {}
+        for index, option in enumerate(button_data):
+            if option == self.PASSPHRASE and self.seed.has_passphrase:
+                checked_button_colors[index] = GUIConstants.PASSPHRASE_COLOR
+                selected_checked_button_colors[index] = GUIConstants.PASSPHRASE_COLOR_SELECTED
         
         selected_menu_num = self.run_screen(
             seed_screens.SeedOptionsScreen,
             button_data=button_data,
-            fingerprint=self.seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK)),
+            fingerprint=self.seed.get_fingerprint(network),
+            fingerprint_without=(self.seed.get_fingerprint_without_passphrase(network)
+                                 if self.seed.has_passphrase else None),
+            checked_button_indices=list(checked_button_colors),
+            checked_button_colors=checked_button_colors,
+            selected_checked_button_colors=selected_checked_button_colors,
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
@@ -639,6 +839,9 @@ class SeedOptionsView(View):
 
         elif button_data[selected_menu_num] == self.BIP85_CHILD_SEED:
             return Destination(SeedBIP85SelectNumWordsView, view_args={"seed": self.seed})
+
+        elif button_data[selected_menu_num] == self.PASSPHRASE:
+            return Destination(SeedPassphraseMenuView, view_args={"seed": self.seed})
 
         elif button_data[selected_menu_num] == self.DISCARD:
             return Destination(SeedDiscardView, view_args=dict(seed=self.seed))
