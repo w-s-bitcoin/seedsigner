@@ -468,6 +468,16 @@ class SeedDiscardView(View):
         else:
             self.is_pending_seed = False
             self.seed = seed
+            unavailable = self.validate_loaded_seed()
+            if unavailable:
+                self.set_redirect(unavailable)
+
+
+    def validate_loaded_seed(self):
+        if not self.is_pending_seed and not any(loaded is self.seed for loaded in self.controller.storage.seeds):
+            return Destination(SeedsMenuView if self.controller.storage.num_seeds() else MainMenuView,
+                               clear_history=True)
+        return None
 
 
     def run(self):
@@ -485,6 +495,9 @@ class SeedDiscardView(View):
             button_data=button_data,
         )
 
+        unavailable = self.validate_loaded_seed()
+        if unavailable:
+            return unavailable
         if button_data[selected_menu_num] == self.KEEP:
             # Use skip_current_view=True to prevent BACK from landing on this warning screen
             if self.is_pending_seed:
@@ -497,6 +510,11 @@ class SeedDiscardView(View):
                 self.controller.storage.clear_pending_seed()
             else:
                 self.controller.discard_seed(self.seed)
+                # Returning directly to the seed list must still release wallet
+                # state that was previously cleared on arrival at the main menu.
+                self.controller.clear_wallet_state()
+                if self.controller.storage.num_seeds() > 0:
+                    return Destination(SeedsMenuView, clear_history=True)
             return Destination(MainMenuView, clear_history=True)
 
 
