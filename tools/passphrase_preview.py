@@ -54,6 +54,7 @@ from seedsigner.views.view import Destination, View
 
 MNEMONIC = ["abandon"] * 11 + ["about"]
 DEMO_PASSPHRASE = "preview"
+DEMO_EDIT_PASSPHRASE = "preview2"
 KEYS = {
     "up": HardwareButtonsConstants.KEY_UP,
     "down": HardwareButtonsConstants.KEY_DOWN,
@@ -271,11 +272,11 @@ def generate_screenshots(output, renderer):
         ("06-edit-menu", seed_views.SeedPassphraseMenuView, {"seed": protected}),
         ("07-edit-keyboard", seed_views.SeedEditPassphraseView, {"seed": protected}),
         ("08-edit-confirmation", seed_views.SeedConfirmPassphraseView,
-         {"seed": protected, "passphrase": "preview2"}),
+         {"seed": protected, "passphrase": DEMO_EDIT_PASSPHRASE}),
         ("09-remove-confirmation", seed_views.SeedConfirmPassphraseView,
          {"seed": protected, "passphrase": ""}),
         ("10-cancel-confirmation", seed_views.SeedCancelPassphraseView,
-         {"seed": protected, "passphrase": "preview2"}),
+         {"seed": protected, "passphrase": DEMO_EDIT_PASSPHRASE}),
         ("11-long-passphrase", seed_views.SeedConfirmPassphraseView,
          {"seed": protected, "passphrase": long_passphrase}),
         ("12-seed-list", seed_views.SeedsMenuView, {}),
@@ -350,6 +351,9 @@ def generate_screenshots(output, renderer):
          lambda: {"seed": controller.storage.seeds[-1]}),
         ("51-bip85-origin-unavailable", seed_views.SeedBIP85ChildMenuView,
          lambda: {"seed": controller.storage.seeds[-1]}),
+        # Pair with 08-edit-confirmation: same loaded wallet and candidate.
+        ("52-edit-passphrase-load-choice", seed_views.SeedConfirmPassphraseView,
+         lambda: {"seed": controller.storage.seeds[0], "passphrase": DEMO_EDIT_PASSPHRASE}),
     ]
     original_run_screen = View.run_screen
 
@@ -358,7 +362,8 @@ def generate_screenshots(output, renderer):
                 and isinstance(view, seed_views.SeedsMenuView)):
             kwargs["selected_button"] = 3
         if (renderer.capture_path.stem in {"35-bip85-child-passphrase-menu",
-                                          "39-passphrase-load-choice", "40-passphrase-loaded-separately"}
+                                          "39-passphrase-load-choice", "40-passphrase-loaded-separately",
+                                          "52-edit-passphrase-load-choice"}
                 and isinstance(view, seed_views.SeedConfirmPassphraseView)):
             # Continue through the real review into its save-choice View.
             return kwargs["button_data"].index(view.APPLY)
@@ -393,6 +398,8 @@ def generate_screenshots(output, renderer):
                 controller, _ = configure_controller("lineage")
             elif name == "39-passphrase-load-choice":
                 controller, _ = configure_controller()
+            elif name == "52-edit-passphrase-load-choice":
+                controller, _ = configure_controller("existing")
             elif name == "41-bip85-loaded-passphrased-parent":
                 controller, _ = configure_controller("bip85-loaded-existing")
             elif name == "42-bip85-passphrased-child-passphrased-parent":
