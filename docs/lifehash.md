@@ -102,6 +102,11 @@ child-word pages always show the actual deriving parent → child, including
 when that parent is itself a passphrased child. Labels, sequence positions, and hexadecimal
 fingerprints remain available; LifeHash pixels are unchanged. Unrelated
 success and verification checks retain their existing green color.
+Menu rows, keyboard keys, and shared input surfaces use near-black charcoal
+(`BUTTON_BACKGROUND_COLOR`, `#181818`) against a pure-black screen background.
+White text, orange selection, LifeHash pixels, and semantic indicator colors
+retain their existing values.
+
 Selected rows keep these exact colors. Compact black backings behind the
 arrows and semantic checkmarks keep them visible against the orange selection
 background without recoloring the symbols or LifeHash images.
