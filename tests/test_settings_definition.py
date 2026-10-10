@@ -2,7 +2,7 @@ import os
 from unittest.mock import patch
 
 from base import BaseTest
-from seedsigner.models.settings_definition import SettingsConstants
+from seedsigner.models.settings_definition import SettingsConstants, SettingsDefinition
 
 
 class TestSettingsDefinition(BaseTest):
@@ -35,3 +35,15 @@ class TestSettingsDefinition(BaseTest):
             # Recheck w/our mocked dir listing:
             detected_languages = [lang_tuple[0] for lang_tuple in SettingsConstants.get_detected_languages()]
             assert absent_language_code in detected_languages
+
+
+    def test_passphrase_always_ask_preserves_existing_settings_value(self):
+        entry = SettingsDefinition.get_settings_entry(SettingsConstants.SETTING__PASSPHRASE)
+        assert entry.get_selection_option_display_name_by_value("R") == "Always ask"
+        assert entry.get_selection_option_value_by_display_name("Always ask") == "R"
+        assert [entry.get_selection_option_value(i) for i in range(3)] == ["E", "D", "R"]
+        assert entry.default_value == SettingsConstants.OPTION__ENABLED
+        self.settings.set_value(SettingsConstants.SETTING__PASSPHRASE, "R")
+        assert self.settings.get_value(SettingsConstants.SETTING__PASSPHRASE) == SettingsConstants.OPTION__REQUIRED
+        # Other settings retain their own Required label and behavior.
+        assert dict(SettingsConstants.OPTIONS__ENABLED_DISABLED_REQUIRED)["R"] == "Required"

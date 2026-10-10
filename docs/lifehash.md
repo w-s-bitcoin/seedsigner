@@ -73,7 +73,10 @@ first and default action, followed by **Edit passphrase** and **Cancel**.
 
 For a nonempty passphrase, Continue opens **Load Wallet** with **Replace
 current** selected by default, **Load separately**, and **Cancel**. Replacement
-changes the selected stored wallet. Separate loading preserves that wallet
+changes the selected stored wallet. The screen separately labels **Replace
+loaded wallet:** and that wallet's current fingerprint, so editing a passphrase
+identifies what will be replaced without implying that the old passphrase is
+the derivation source or adding a third LifeHash. Separate loading preserves that wallet
 and selects an additional passphrase variant, or its existing canonical
 full-seed-bytes match. Both paths retain any unrelated pending seed and, when
 editing a child wallet, its BIP-85 parent. Committing a different wallet clears
@@ -83,7 +86,10 @@ intact; **Cancel** discards the draft and returns to the original seed menu.
 Neither action changes the stored original. Removal retains
 its direct, Cancel-first confirmation and shows only the destination without
 a passphrase. These display identities do not participate in storage
-replacement or duplicate detection.
+replacement or duplicate detection. Submitting an empty passphrase on a wallet
+that already has none returns to its menu without a removal prompt or state
+change. The passphrase setting labels its persisted `R` value **Always ask**:
+initial loading prompts for a passphrase but still permits Skip and later removal.
 
 Each relationship display contains at most two LifeHashes: the immediate
 source and destination for the relationship being shown. The loaded seed's
@@ -146,7 +152,7 @@ color. Sharpening RGB glyphs directly had shifted the visible text color away
 from the configured arrow color. The coverage-mask path preserves the shared
 color while retaining antialiased edges; other text rendering is unchanged.
 
-Rows use 20px LifeHashes, 20px fixed-width fingerprint text, and 10px gaps
+Rows use 20px LifeHashes, 20px fixed-width fingerprint text, and 8px gaps
 on each side of an arrow. Both roles in a source → destination pair remain
 visible even if their 32-bit fingerprints happen to be equal; matching XFPs
 do not prove matching wallets.
@@ -169,8 +175,15 @@ wallet and navigation state while preserving the other loaded seeds and any
 unrelated pending seed.
 
 The bounded cache contains only public fingerprint bytes and derived RGB bytes.
-Each call returns a fresh image. The icon is a visual representation of the
-same 32-bit fingerprint, not an additional independent identifier.
+Each helper call returns a fresh image. A UI icon generates that image on first
+render or explicit image access and retains it for subsequent renders. Creating
+a long menu therefore does not generate icons for offscreen rows; scrolling
+renders those icons when needed. Display inversion never mutates that retained
+canonical image. The shared cache remains bounded to 16 fingerprints. Physical
+Pi Zero render timings have not been measured, and recreating menus with more
+than 16 unique fingerprints can still require recomputation.
+The icon is a visual representation of the same 32-bit fingerprint, not an
+additional independent identifier.
 
 ## BIP-85 parent and child identities
 
@@ -198,9 +211,13 @@ warning and backup workflow. Every child-word page retains the parent LifeHash
 and page label. Child words appear three per page: four pages for 12 words or
 eight pages for 24 words. Ordinary seed-word pages keep four words per page.
 
-After the last word page, **Verify & load** starts the backup-word check;
-**Load child** continues directly. Successful verification also ends
-with an explicit **Load child** action. Loading adds the derived child as a
+After the last word page, **Verify backup** starts the backup-word check;
+**Load child** continues directly, and **Done, don't load** returns without
+loading the candidate. Successful verification offers both **Load child** and
+**Done, don't load**. The latter returns to the deriving wallet (or the original
+child when changing its index), retaining stored seeds, pending entry and
+workflow state while clearing backup navigation history. If that wallet is no
+longer loaded, it returns to In-Memory Seeds or Home instead. Loading adds the derived child as a
 separate seed with an empty passphrase, or selects its canonical stored
 instance if the full derived seed bytes already match a loaded wallet. The
 parent remains loaded and unchanged, and any unrelated pending seed is
@@ -222,7 +239,9 @@ verification. After **Load child**, **Replace current** is selected by default;
 child without loading the candidate. **Back** returns to the preceding backup
 prompt or success page. Both commit options recheck the loaded source child,
 verified parent, and complete candidate derivation immediately before storage
-changes; duplicate selection still uses full derived seed bytes.
+changes; duplicate selection still uses full derived seed bytes. The Load Wallet
+screen separately labels the loaded child's current fingerprint as the
+replacement target while retaining the parent → candidate diagram.
 
 **Derive new child** instead uses the selected child's current wallet,
 including its own passphrase, as the parent of a new generation. It offers the
@@ -411,7 +430,7 @@ counts, unchanged-index preservation, sibling replacement/separate loading,
 grandchild derivation with the child's passphrase, backup navigation, stale
 parent/source rejection, and duplicate selection.
 
-For the current two-LifeHash presentation, all 584 non-screenshot tests passed
+For the initial two-LifeHash revision, all 584 non-screenshot tests passed
 and the preview generated 50 native gallery PNGs. The regression tests cover
 passphrase priority in headers and in-memory rows, the two-role limit even for
 longer input sequences, equal-fingerprint roles, arrow colors, and the full 20px

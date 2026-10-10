@@ -31,6 +31,12 @@ class SettingsConstants:
     OPTIONS__ENABLED_DISABLED_REQUIRED = OPTIONS__ENABLED_DISABLED +[
         (OPTION__REQUIRED, _mft("Required")),
     ]
+    # Keep the persisted "R" value compatible with existing settings. For
+    # passphrases it opens the entry screen automatically, but can still be skipped.
+    OPTIONS__PASSPHRASE = OPTIONS__ENABLED_DISABLED + [
+        # TRANSLATOR_NOTE: Always ask for a BIP-39 passphrase; entering one remains optional.
+        (OPTION__REQUIRED, _mft("Always ask")),
+    ]
     OPTIONS__ENABLED_DISABLED_PROMPT = OPTIONS__ENABLED_DISABLED + [
         (OPTION__PROMPT, _mft("Prompt")),
     ]
@@ -642,7 +648,7 @@ class SettingsDefinition:
                       display_name=_mft("BIP-39 passphrase"),
                       type=SettingsConstants.TYPE__SELECT_1,
                       visibility=SettingsConstants.VISIBILITY__ADVANCED,
-                      selection_options=SettingsConstants.OPTIONS__ENABLED_DISABLED_REQUIRED,
+                      selection_options=SettingsConstants.OPTIONS__PASSPHRASE,
                       default_value=SettingsConstants.OPTION__ENABLED),
 
         SettingsEntry(category=SettingsConstants.CATEGORY__FEATURES,

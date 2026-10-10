@@ -177,3 +177,28 @@ class TestSeedDiscardFlows(FlowTest):
             self.controller.discard_seed(self.target)
         assert self.controller.storage.seeds[0] is canonical
         assert self.controller.storage.get_pending_seed() is self.pending
+
+
+    @pytest.mark.parametrize("kind", KINDS)
+    def test_discard_uses_existing_translation_with_actual_wallet_fingerprint(self, monkeypatch, kind):
+        self.load_wallets(kind, multiple=True)
+        view = seed_views.SeedDiscardView(self.target)
+        translated_template = "¿Borrar la semilla {} del dispositivo?"
+        lookups = []
+
+        def translate(message):
+            lookups.append(message)
+            return translated_template if message == "Wipe seed {} from the device?" else message
+
+        def inspect_screen(*args, **kwargs):
+            fingerprint = self.target.get_fingerprint()
+            assert kwargs["text"] == translated_template.format(fingerprint)
+            assert kwargs["lifehash_fingerprint"] == fingerprint
+            return 0  # Keep the wallet.
+
+        monkeypatch.setattr(seed_views, "_", translate)
+        monkeypatch.setattr(view, "run_screen", inspect_screen)
+        destination = view.run()
+        assert "Wipe seed {} from the device?" in lookups
+        assert destination.View_cls is seed_views.SeedOptionsView
+        assert destination.view_args["seed"] is self.target

@@ -102,6 +102,17 @@ class TestBIP85ChildIndexFlows(FlowTest):
         assert view.candidate.bip85_parent_fingerprint == "b4e3f5ed"
         assert view.candidate.bip85_child_index == LAST_INDEX
         assert view.candidate.bip85_num_words == self.num_words
+        run_screen = view.run_screen
+
+        def inspect_screen(*args, **kwargs):
+            assert kwargs["fingerprint_parent"] == self.parent.get_fingerprint()
+            assert kwargs["fingerprint_new"] == view.candidate.get_fingerprint()
+            # Replacement affects the current passphrased child, not its bare
+            # wallet, the deriving parent, or the new sibling in the diagram.
+            assert kwargs["fingerprint_current"] == self.child.get_fingerprint()
+            return run_screen(*args, **kwargs)
+
+        view.run_screen = inspect_screen
 
     def to_review(self):
         return [

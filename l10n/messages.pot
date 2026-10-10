@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: seedsigner 0.8.7\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-03-05 22:02+0000\n"
+"POT-Creation-Date: 2026-10-10 16:43-0400\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -263,12 +263,48 @@ msgstr ""
 msgid "Seed Words: {}/{}"
 msgstr ""
 
+#. BIP-85 child index, current word page and total pages.
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Child #{}: {}/{}"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "BIP-85 Child"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Parent"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Child"
+msgstr ""
+
+#. Inserts the child index (e.g. "Child #0")
+#: src/seedsigner/gui/screens/seed_screens.py
+#: src/seedsigner/views/seed_views.py
+msgid "Child #{}"
+msgstr ""
+
+#. Number of BIP-39 words in a derived BIP-85 child seed.
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "{} words"
+msgstr ""
+
 #: src/seedsigner/gui/screens/seed_screens.py
 msgid "BIP-85 Index"
 msgstr ""
 
 #: src/seedsigner/gui/screens/seed_screens.py
+msgid "Load Child Seed?"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
 msgid "Verify Backup?"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Loading this child seed is optional."
 msgstr ""
 
 #: src/seedsigner/gui/screens/seed_screens.py
@@ -316,10 +352,33 @@ msgstr ""
 msgid "Verify Passphrase"
 msgstr ""
 
-#. Describes the effect of applying a BIP-39 passphrase; it changes the seed's
-#. fingerprint
+#. Page number while reviewing a long BIP-39 passphrase.
 #: src/seedsigner/gui/screens/seed_screens.py
-msgid "changes fingerprint"
+msgid "Passphrase: {}/{}"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Passphrase"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Change Wallet?"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Remove Passphrase?"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Return to wallet without passphrase?"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Load Wallet"
+msgstr ""
+
+#: src/seedsigner/gui/screens/seed_screens.py
+msgid "Replace loaded wallet:"
 msgstr ""
 
 #. Refers to the SeedQR type: Standard or Compact
@@ -471,6 +530,11 @@ msgstr ""
 
 #: src/seedsigner/gui/screens/settings_screens.py
 #: src/seedsigner/views/settings_views.py
+msgid "Version"
+msgstr ""
+
+#: src/seedsigner/gui/screens/settings_screens.py
+#: src/seedsigner/views/settings_views.py
 msgid "Settings QR"
 msgstr ""
 
@@ -482,8 +546,18 @@ msgstr ""
 msgid "Home"
 msgstr ""
 
+#. Counts frames collected so far vs the total required (e.g. 12/50)
+#: src/seedsigner/gui/screens/tools_screens.py
+msgid "{}/{}"
+msgstr ""
+
 #: src/seedsigner/gui/screens/tools_screens.py
 msgid "click a button"
+msgstr ""
+
+#. Shown while the camera gathers the image frames a new seed requires
+#: src/seedsigner/gui/screens/tools_screens.py
+msgid "Collecting entropy frames"
 msgstr ""
 
 #. A prompt to the user to either accept or reshoot the image
@@ -584,6 +658,11 @@ msgstr ""
 
 #: src/seedsigner/models/settings_definition.py
 msgid "Required"
+msgstr ""
+
+#. Always ask for a BIP-39 passphrase; entering one remains optional.
+#: src/seedsigner/models/settings_definition.py
+msgid "Always ask"
 msgstr ""
 
 #. QR code format option; "default" = this is the format most wallets use
@@ -857,7 +936,8 @@ msgid ""
 "addresses."
 msgstr ""
 
-#: src/seedsigner/views/psbt_views.py src/seedsigner/views/view.py
+#: src/seedsigner/views/psbt_views.py src/seedsigner/views/seed_views.py
+#: src/seedsigner/views/view.py
 msgid "Continue"
 msgstr ""
 
@@ -871,6 +951,20 @@ msgstr ""
 msgid ""
 "This transaction spends its entire input value. No change is coming back "
 "to your wallet."
+msgstr ""
+
+#: src/seedsigner/views/psbt_views.py
+msgid "High Fee!"
+msgstr ""
+
+#. Variable is the percentage of the total output value (excluding change) that
+#. the fee exceeds. (e.g. "This transaction has a fee higher than 25% of the
+#. total output value (excluding change).")
+#: src/seedsigner/views/psbt_views.py
+#, python-format
+msgid ""
+"This transaction has a fee higher than {}% of the total output value "
+"(excluding change)."
 msgstr ""
 
 #. Future-tense used to indicate that this transaction will send this amount,
@@ -906,21 +1000,19 @@ msgid "Verify multisig addr"
 msgstr ""
 
 #: src/seedsigner/views/psbt_views.py
-msgid "Verifying Change..."
+msgid "Select a different seed"
 msgstr ""
 
 #: src/seedsigner/views/psbt_views.py
-msgid "Verifying Self-Transfer..."
+msgid "Seed Can't Sign"
 msgstr ""
 
-#. Variable is either "change" or "self-transfer".
 #: src/seedsigner/views/psbt_views.py
-msgid "Transaction's {} address could not be verified from wallet descriptor."
+msgid "None of the inputs in this transaction are controlled by this seed."
 msgstr ""
 
-#. Variable is either "change" or "self-transfer".
 #: src/seedsigner/views/psbt_views.py
-msgid "Transaction's {} address could not be generated from your seed."
+msgid "Discard transaction"
 msgstr ""
 
 #: src/seedsigner/views/psbt_views.py
@@ -928,11 +1020,47 @@ msgid "Suspicious Transaction"
 msgstr ""
 
 #: src/seedsigner/views/psbt_views.py
-msgid "Address Verification Failed"
+msgid "Likely an Attack!"
 msgstr ""
 
 #: src/seedsigner/views/psbt_views.py
-msgid "Discard transaction"
+msgid ""
+"The transaction's change/self-transfer output is not going back to your "
+"wallet."
+msgstr ""
+
+#: src/seedsigner/views/psbt_views.py
+msgid "Transaction Problem"
+msgstr ""
+
+#: src/seedsigner/views/psbt_views.py
+msgid ""
+"This transaction incorrectly claims that one of its inputs belongs to "
+"this seed."
+msgstr ""
+
+#. The transaction/psbt has an error but does not seem to be malicious.
+#: src/seedsigner/views/psbt_views.py
+msgid "This transaction claims too many keys for one of its outputs."
+msgstr ""
+
+#. The transaction/psbt has an error but does not seem to be malicious.
+#: src/seedsigner/views/psbt_views.py
+msgid "This transaction claims taproot and non-taproot keys for the same script."
+msgstr ""
+
+#. The transaction/psbt contains a deception that we consider an attack.
+#: src/seedsigner/views/psbt_views.py
+msgid "This transaction misrepresents where one of its outputs pays."
+msgstr ""
+
+#. Variable is either "change" or "self-transfer".
+#: src/seedsigner/views/psbt_views.py
+msgid "Transaction's {} address could not be verified from wallet descriptor."
+msgstr ""
+
+#: src/seedsigner/views/psbt_views.py
+msgid "Address Verification Failed"
 msgstr ""
 
 #: src/seedsigner/views/psbt_views.py
@@ -1110,10 +1238,46 @@ msgid "You have not entered a passphrase yet."
 msgstr ""
 
 #: src/seedsigner/views/seed_views.py
+msgid "Different passphrase"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Remove passphrase"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Keep editing"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Discard changes"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Discard Changes?"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "The loaded wallet will stay unchanged."
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Cancel"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Replace current"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Load separately"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
 msgid "Keep seed"
 msgstr ""
 
-#. Inserts the seed fingerprint
+#. Inserts the fingerprint of the seed being discarded.
 #: src/seedsigner/views/seed_views.py
 msgid "Wipe seed {} from the device?"
 msgstr ""
@@ -1182,13 +1346,34 @@ msgstr ""
 msgid "You must keep your seed words private & away from all online devices."
 msgstr ""
 
-#. Inserts the child index (e.g. "Child #0")
 #: src/seedsigner/views/seed_views.py
-msgid "Child #{}"
+msgid "Seed Words"
 msgstr ""
 
 #: src/seedsigner/views/seed_views.py
-msgid "Seed Words"
+msgid "Change child index"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Derive new child"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Origin Unavailable"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Parent Needed"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Derive this child again from its original parent to change its index."
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid ""
+"Load the original parent with its original passphrase to change this "
+"child's index."
 msgstr ""
 
 #: src/seedsigner/views/seed_views.py
@@ -1227,6 +1412,18 @@ msgstr ""
 msgid "Skip"
 msgstr ""
 
+#: src/seedsigner/views/seed_views.py
+msgid "Verify backup"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Load child"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "Done, don't load"
+msgstr ""
+
 #. Inserts the word number (e.g. "Verify Word #1")
 #: src/seedsigner/views/seed_views.py
 msgid "Verify Word #{}"
@@ -1253,6 +1450,10 @@ msgstr ""
 
 #: src/seedsigner/views/seed_views.py
 msgid "Backup Verified"
+msgstr ""
+
+#: src/seedsigner/views/seed_views.py
+msgid "All words verified."
 msgstr ""
 
 #: src/seedsigner/views/seed_views.py
@@ -1329,10 +1530,6 @@ msgid "Skip 10"
 msgstr ""
 
 #: src/seedsigner/views/seed_views.py
-msgid "Cancel"
-msgstr ""
-
-#: src/seedsigner/views/seed_views.py
 msgid "Return to transaction"
 msgstr ""
 
@@ -1405,6 +1602,14 @@ msgstr ""
 
 #: src/seedsigner/views/tools_views.py src/seedsigner/views/view.py
 msgid "Tools"
+msgstr ""
+
+#. Shown when the camera fails to collect enough frames for a new seed.
+#. "expected" and "actual" are the number of frames.
+#: src/seedsigner/views/tools_views.py
+msgid ""
+"Entropy collection failed. Expected {expected} preview frames, got "
+"{actual}"
 msgstr ""
 
 #: src/seedsigner/views/tools_views.py

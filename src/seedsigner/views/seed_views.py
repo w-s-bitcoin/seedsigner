@@ -573,6 +573,10 @@ class SeedConfirmPassphraseView(SeedLoadedPassphraseView):
     def __init__(self, seed: Seed, passphrase: str = None, candidate: Seed = None, page_index: int = 0):
         super().__init__(seed, passphrase, candidate)
         self.page_index = page_index
+        if not self.has_redirect and not self.seed.has_passphrase and not self.candidate.has_passphrase:
+            # Submitting an empty addition does not remove anything. Leave the
+            # loaded seed, pending entry, and signing state untouched.
+            self.set_redirect(self.cancel())
 
     def run(self):
         pages = seed_screens.SeedConfirmPassphraseScreen.passphrase_pages(self.candidate.passphrase_display)
@@ -630,6 +634,7 @@ class SeedPassphraseSaveView(SeedLoadedPassphraseView):
             seed_screens.SeedPassphraseSaveScreen,
             fingerprint_without=self.seed.get_fingerprint_without_passphrase(network),
             fingerprint_new=self.candidate.get_fingerprint(network),
+            fingerprint_current=self.seed.get_fingerprint(network),
             button_data=button_data,
             selected_button=0,
         )
@@ -675,7 +680,8 @@ class SeedDiscardView(View):
         button_data = [self.KEEP, self.DISCARD]
 
         fingerprint = self.seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK))
-        text = _("Wipe this seed from the device?")
+        # TRANSLATOR_NOTE: Inserts the fingerprint of the seed being discarded.
+        text = _("Wipe seed {} from the device?").format(fingerprint)
         selected_menu_num = self.run_screen(
             WarningScreen,
             title=_("Discard Seed?"),
@@ -1630,6 +1636,7 @@ class SeedBIP85SaveChildView(View):
             seed_screens.SeedBIP85SaveChildScreen,
             fingerprint_parent=self.parent.get_fingerprint(network),
             fingerprint_new=self.candidate.get_fingerprint(network),
+            fingerprint_current=self.seed.get_fingerprint(network),
             button_data=button_data, selected_button=0,
         )
         if selected == RET_CODE__BACK_BUTTON:
@@ -1650,11 +1657,22 @@ class SeedBIP85SaveChildView(View):
 """****************************************************************************
     Seed Words Backup Test
 ****************************************************************************"""
+def _finish_bip85_backup(view):
+    """Forget the derived backup pages without loading or replacing any seed."""
+    seed = view.bip85_data.get("change_from_seed", view.seed)
+    if any(loaded is seed for loaded in view.controller.storage.seeds):
+        return Destination(SeedOptionsView, view_args=dict(seed=seed), clear_history=True)
+    # A stale backup screen must not return to a wallet that has been removed.
+    return Destination(SeedsMenuView if view.controller.storage.seeds else MainMenuView,
+                       clear_history=True)
+
+
 class SeedWordsBackupTestPromptView(View):
     VERIFY = ButtonOption("Verify")
     SKIP = ButtonOption("Skip")
-    VERIFY_CHILD = ButtonOption("Verify & load")
+    VERIFY_CHILD = ButtonOption("Verify backup")
     LOAD_CHILD = ButtonOption("Load child")
+    DONE_CHILD = ButtonOption("Done, don't load")
 
     def __init__(self, seed: Seed, bip85_data: dict = None):
         super().__init__()
@@ -1663,13 +1681,16 @@ class SeedWordsBackupTestPromptView(View):
 
 
     def run(self):
-        button_data = ([self.VERIFY_CHILD, self.LOAD_CHILD] if self.bip85_data is not None
+        button_data = ([self.VERIFY_CHILD, self.LOAD_CHILD, self.DONE_CHILD] if self.bip85_data is not None
                        else [self.VERIFY, self.SKIP])
         selected_menu_num = self.run_screen(
             seed_screens.SeedWordsBackupTestPromptScreen,
             button_data=button_data,
             is_bip85_child=self.bip85_data is not None,
         )
+
+        if button_data[selected_menu_num] == self.DONE_CHILD:
+            return _finish_bip85_backup(self)
 
         if button_data[selected_menu_num] in [self.VERIFY, self.VERIFY_CHILD]:
             return Destination(
@@ -1831,6 +1852,9 @@ class SeedWordsBackupTestMistakeView(View):
 
 
 class SeedWordsBackupTestSuccessView(View):
+    LOAD_CHILD = SeedWordsBackupTestPromptView.LOAD_CHILD
+    DONE_CHILD = SeedWordsBackupTestPromptView.DONE_CHILD
+
     def __init__(self, seed: Seed, bip85_data: dict = None):
         super().__init__()
         self.seed = seed
@@ -1838,16 +1862,20 @@ class SeedWordsBackupTestSuccessView(View):
 
     def run(self):
         from seedsigner.gui.screens.screen import LargeIconStatusScreen
-        self.run_screen(
+        button_data = ([self.LOAD_CHILD, self.DONE_CHILD] if self.bip85_data is not None
+                       else [ButtonOption("OK")])
+        selected = self.run_screen(
             LargeIconStatusScreen,
             title=_("Backup Verified"),
             show_back_button=False,
             status_headline=_("Success!"),
-            text=_("All mnemonic backup words were successfully verified!"),
-            button_data=[ButtonOption("Load child") if self.bip85_data is not None else ButtonOption("OK")]
+            text=_("All words verified.") if self.bip85_data is not None else _("All mnemonic backup words were successfully verified!"),
+            button_data=button_data,
         )
 
         if self.bip85_data is not None:
+            if button_data[selected] == self.DONE_CHILD:
+                return _finish_bip85_backup(self)
             return Destination(SeedBIP85LoadChildView,
                                view_args=dict(seed=self.seed, **self.bip85_data))
         elif self.seed is None:
