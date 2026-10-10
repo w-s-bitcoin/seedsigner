@@ -25,6 +25,29 @@ The helper uses nearest-neighbor scaling for other display sizes. Compatibility
 checks compare the original 32×32 RGB pixels, before display resizing, borders,
 or rounded corners. Sparrow itself subsequently resizes its icon to 24×24.
 
+### Display color inversion
+
+LifeHash tiles retain their reference colors when the display's hardware
+inversion setting changes. The shared icon component compensates only its own
+pixels at draw time, leaving the cached reference image, surrounding text,
+arrows, and other UI colors untouched. This includes both tiles in relationship
+displays, menu rows, and offscreen content that is later scrolled into view.
+
+The driver reports effective color inversion for its supported panel, rather
+than treating the settings value or controller INVON bit as a visual inversion.
+Both ST7789 drivers initialize with INVON, which is their normal panel polarity;
+the ILI9341 driver documents an IPS panel that also needs INVON. Turning INVON
+off requires complementary framebuffer pixels for LifeHashes on these panels.
+Startup and setting commands remain unchanged. Other panel variants with a
+different native polarity must supply the appropriate driver mapping.
+
+Tests check register state, live redraws, and RGB565 pixel compensation.
+They model the panel's color complement; physical LCD color/gamma behavior and
+this inversion change still require device testing. The earlier physical test
+report for firmware `5955b14` predates this change.
+
+### Wallet relationships
+
 Passphrase review places two identities horizontally with a right-pointing
 arrow: first the mnemonic's wallet **without a passphrase**, then the candidate
 wallet. Each identity has a 20px LifeHash beside its 16px hexadecimal fingerprint.

@@ -28,6 +28,17 @@ class BaseDisplayDriver:
         return self._height
 
 
+    @property
+    def colors_inverted(self) -> bool:
+        """Whether the supported panel complements framebuffer colors.
+
+        This differs from the controller's inversion-register bit. Drivers
+        with known panel polarity override this for reference-color graphics.
+        Virtual displays and drivers without inversion need no compensation.
+        """
+        return False
+
+
     def invert(self, enabled: bool = True):
         """
         Invert how the display interprets colors.

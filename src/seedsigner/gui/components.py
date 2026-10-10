@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 from gettext import gettext as _
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from typing import Any, List, Tuple
 
 from seedsigner.gui.renderer import Renderer
@@ -819,7 +819,13 @@ class LifeHashIcon(BaseComponent):
         self.width = self.height = self.size
 
     def render(self):
-        self.canvas.paste(self.image, (self.screen_x, self.screen_y))
+        # The controller's INVON bit is panel polarity, not necessarily a visual
+        # inversion. Ask the driver about the resulting colors. Read on every
+        # render so live setting changes also affect existing components.
+        image = self.image
+        if getattr(self.renderer.disp, "colors_inverted", False) is True:
+            image = ImageOps.invert(image)
+        self.canvas.paste(image, (self.screen_x, self.screen_y))
 
 
 @dataclass

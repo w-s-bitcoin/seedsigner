@@ -121,7 +121,7 @@ class ST7789(BaseDisplayDriver):
         self.data(0x20)
         self.data(0x23)
         
-        self.command(0x21)  # inversion ON; 0x20 = inversion OFF
+        self.invert()  # The supported ST7789 panel needs INVON for normal colors.
 
         self.command(0x11)
 
@@ -135,6 +135,7 @@ class ST7789(BaseDisplayDriver):
         time.sleep(0.01)
         GPIO.output(self._rst,GPIO.HIGH)
         time.sleep(0.01)
+        self.inverted = False
         
     def SetWindows(self, Xstart, Ystart, Xend, Yend):
         #set the X coordinates
@@ -175,6 +176,12 @@ class ST7789(BaseDisplayDriver):
         GPIO.output(self._dc,GPIO.HIGH)
         self._spi.writebytes2(_buffer)
 
+    @property
+    def colors_inverted(self) -> bool:
+        # INVON produces normal colors on the supported ST7789 panel.
+        return not self.inverted
+
     def invert(self, enabled: bool = True):
         """Invert how the display interprets colors"""
         self.command(0x21 if enabled else 0x20)
+        self.inverted = bool(enabled)

@@ -204,6 +204,7 @@ class ILI9341(BaseDisplayDriver):
             time.sleep(0.02)
             GPIO.output(self._rst, GPIO.HIGH)
             time.sleep(0.150)
+            self.inverted = False
 
     def _init(self):
         # Initialize the display.  Broken out as a separate function so it can
@@ -303,6 +304,12 @@ class ILI9341(BaseDisplayDriver):
         self.reset()
         self._init()
 
+    @property
+    def colors_inverted(self) -> bool:
+        # The IPS panel documented above needs INVON for normal colors. A
+        # different panel variant must define its own native polarity here.
+        return not self.inverted
+
     def invert(self, enabled: bool = True):
         """Sets display inversion to the specified state. If not provided, state
         is True, which inverts the display. If state is False, the display turns
@@ -311,7 +318,7 @@ class ILI9341(BaseDisplayDriver):
             self.command(ILI9341_INVON)
         else:
             self.command(ILI9341_INVOFF)
-        self.inverted = enabled
+        self.inverted = bool(enabled)
         return self
 
     def set_window(self, x0=0, y0=0, x1=None, y1=None):
