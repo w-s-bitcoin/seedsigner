@@ -35,6 +35,10 @@ class GUIConstants:
     ERROR_COLOR = "#FF1B0A"
     SUCCESS_COLOR = "#30D158"
     INFO_COLOR = "#409CFF"
+    PASSPHRASE_COLOR = "#FFE20E"
+    PASSPHRASE_COLOR_SELECTED = PASSPHRASE_COLOR
+    BIP85_COLOR = "#64D2FF"
+    BIP85_COLOR_SELECTED = BIP85_COLOR
     # BITCOIN_ORANGE = "#FF9416"  # not used
     TESTNET_COLOR = "#00F100"
     REGTEST_COLOR = "#00CAF1"
@@ -371,6 +375,7 @@ class TextArea(BaseComponent):
     horizontal_scroll_begin_hold_secs: float = 2.0
     horizontal_scroll_end_hold_secs: float = 1.0
     height_ignores_below_baseline: bool = False  # If True, characters that render below the baseline (e.g. "pqgy") will not affect the final height calculation
+    preserve_font_color: bool = False
 
 
     def __post_init__(self):
@@ -507,14 +512,15 @@ class TextArea(BaseComponent):
         else:
             supersampled_font = font
 
+        # Filtering colored RGB glyphs can clip channels independently and shift
+        # their hue. Render a coverage mask when the text must match a UI color.
         img = Image.new(
-            "RGBA",
+            "L" if self.preserve_font_color else "RGBA",
             (
                 image_width * self.supersampling_factor,
                 (total_text_height + 2*resample_padding) * self.supersampling_factor
             ),
-            self.background_color
-            # "red"
+            0 if self.preserve_font_color else self.background_color
         )
         draw = ImageDraw.Draw(img)
 
@@ -542,7 +548,9 @@ class TextArea(BaseComponent):
                 # Scrolling temp img isn't relative to any positioning other than its own text
                 text_x = 0
 
-            draw.text((text_x * self.supersampling_factor, cur_y), line["text"], fill=self.font_color, font=supersampled_font, anchor=anchor)
+            draw.text((text_x * self.supersampling_factor, cur_y), line["text"],
+                      fill=255 if self.preserve_font_color else self.font_color,
+                      font=supersampled_font, anchor=anchor)
 
             # Debugging: show the exact vertical extents of each line of text
             # draw.line((0, cur_y - self.text_height_above_baseline * self.supersampling_factor, image_width * self.supersampling_factor, cur_y - self.text_height_above_baseline * self.supersampling_factor), fill="blue", width=int(self.supersampling_factor))
@@ -557,6 +565,11 @@ class TextArea(BaseComponent):
 
             img = sharpened.crop((0, resample_padding, image_width, resample_padding + total_text_height))
         
+        if self.preserve_font_color:
+            colored_text = Image.new("RGBA", img.size, self.background_color)
+            colored_text.paste(self.font_color, (0, 0, img.width, img.height), img)
+            img = colored_text
+
         self.rendered_text_img = img
 
         self.horizontal_text_scroll_thread: TextArea.HorizontalTextScrollThread = None
@@ -792,6 +805,24 @@ class Icon(BaseComponent):
 
 
 @dataclass
+class LifeHashIcon(BaseComponent):
+    """A fingerprint's canonical LifeHash, with text supplied by its parent component."""
+    fingerprint: str = None
+    size: int = 32
+    screen_x: int = 0
+    screen_y: int = 0
+
+    def __post_init__(self):
+        from seedsigner.helpers.lifehash import fingerprint_lifehash
+        super().__post_init__()
+        self.image = fingerprint_lifehash(self.fingerprint, self.size)
+        self.width = self.height = self.size
+
+    def render(self):
+        self.canvas.paste(self.image, (self.screen_x, self.screen_y))
+
+
+@dataclass
 class IconTextLine(BaseComponent):
     """
         Renders an icon next to a label/value pairing. Icon is optional as is label.
@@ -800,6 +831,9 @@ class IconTextLine(BaseComponent):
     icon_name: str = None
     icon_size: int = GUIConstants.ICON_FONT_SIZE
     icon_color: str = GUIConstants.BODY_FONT_COLOR
+    lifehash_fingerprint: str = None
+    lifehash_size: int = 32
+    width: int = None
     label_text: str = None
     value_text: str = ""
     font_name: str = None
@@ -815,12 +849,18 @@ class IconTextLine(BaseComponent):
         if not self.font_size:
             self.font_size = GUIConstants.get_body_font_size()
         super().__post_init__()
+        available_width = self.width if self.width is not None else self.canvas_width - self.screen_x
 
         if self.height is not None and self.label_text:
             raise Exception("Can't currently support vertical auto-centering and label text")
 
-        if self.icon_name:
-            self.icon = Icon(
+        has_icon = bool(self.icon_name or self.lifehash_fingerprint)
+        if has_icon:
+            self.icon = LifeHashIcon(
+                image_draw=self.image_draw, canvas=self.canvas,
+                fingerprint=self.lifehash_fingerprint, size=self.lifehash_size,
+                screen_x=self.screen_x,
+            ) if self.lifehash_fingerprint else Icon(
                 image_draw=self.image_draw,
                 canvas=self.canvas,
                 screen_x=self.screen_x,
@@ -844,10 +884,11 @@ class IconTextLine(BaseComponent):
                 font_size=GUIConstants.get_body_font_size() - 2,
                 font_color=GUIConstants.LABEL_FONT_COLOR,
                 edge_padding=0,
-                is_text_centered=self.is_text_centered if not self.icon_name else False,
+                is_text_centered=self.is_text_centered if not has_icon else False,
                 auto_line_break=False,
                 screen_x=text_screen_x,
                 screen_y=self.screen_y,
+                width=available_width - (self.icon.width + self.icon_horizontal_spacer if has_icon else 0),
             )
         else:
             self.label_textarea = None        
@@ -865,10 +906,11 @@ class IconTextLine(BaseComponent):
             font_name=self.font_name,
             font_size=self.font_size,
             edge_padding=0,
-            is_text_centered=self.is_text_centered if not self.icon_name else False,
+            is_text_centered=self.is_text_centered if not has_icon else False,
             auto_line_break=self.auto_line_break,
             screen_x=text_screen_x,
             screen_y=value_textarea_screen_y,
+            width=available_width - (self.icon.width + self.icon_horizontal_spacer if has_icon else 0),
         )
 
         if self.label_text:
@@ -881,20 +923,26 @@ class IconTextLine(BaseComponent):
             max_textarea_width = self.value_textarea.text_width
         
         # Now we can update the icon's y position
-        if self.icon_name:
+        if has_icon:
+            if self.lifehash_fingerprint and self.icon.height > self.height:
+                offset = (self.icon.height - self.height) // 2
+                self.value_textarea.screen_y += offset
+                if self.label_textarea:
+                    self.label_textarea.screen_y += offset
+                self.height = self.icon.height
             icon_y = self.screen_y + int((self.height - self.icon.height)/2)
             self.icon.screen_y = icon_y
 
             self.height = max(self.icon.height, self.height)
         
-        if self.is_text_centered and self.icon_name:
+        if self.is_text_centered and has_icon:
             total_width = max_textarea_width + self.icon.width + self.icon_horizontal_spacer
-            self.icon.screen_x = self.screen_x + int((self.canvas_width - self.screen_x - total_width) / 2)
+            self.icon.screen_x = self.screen_x + int((available_width - total_width) / 2)
             if self.label_text:
                 self.label_textarea.screen_x = self.icon.screen_x + self.icon.width + self.icon_horizontal_spacer
             self.value_textarea.screen_x = self.icon.screen_x + self.icon.width + self.icon_horizontal_spacer
 
-        self.width = self.canvas_width
+        self.width = available_width
 
 
     def render(self):
@@ -902,8 +950,176 @@ class IconTextLine(BaseComponent):
             self.label_textarea.render()
         self.value_textarea.render()
 
-        if self.icon_name:
+        if self.icon_name or self.lifehash_fingerprint:
             self.icon.render()
+
+
+@dataclass
+class FingerprintArrow(BaseComponent):
+    """An eight-pixel arrow with ten pixels of space on either side."""
+    WIDTH = 28
+    screen_x: int = 0
+    screen_y: int = 0
+    color: str = GUIConstants.BODY_FONT_COLOR
+    background_color: str = None
+
+    def render(self):
+        x = self.screen_x + 10
+        y = self.screen_y + 10
+        if self.background_color:
+            self.image_draw.rounded_rectangle(
+                (x - 2, y - 5, x + 9, y + 5), radius=2, fill=self.background_color,
+            )
+        self.image_draw.line((x, y, x + 7, y), fill=self.color)
+        self.image_draw.line(
+            [(x + 4, y - 3), (x + 7, y), (x + 4, y + 3)],
+            fill=self.color,
+        )
+
+
+@dataclass
+class LifeHashSequence(BaseComponent):
+    """A compact lineage of 20px LifeHashes connected by the shared arrows."""
+    fingerprints: Tuple[str, ...] = None
+    arrow_color: str = GUIConstants.BODY_FONT_COLOR
+    arrow_colors: Tuple[str, ...] = None
+    arrow_background_color: str = None
+    screen_x: int = 0
+    screen_y: int = 0
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not self.fingerprints:
+            raise ValueError("A LifeHash sequence requires at least one fingerprint")
+        if self.arrow_colors is not None and len(self.arrow_colors) != len(self.fingerprints) - 1:
+            raise ValueError("A LifeHash sequence requires one color per arrow")
+        self.height = 20
+        self.width = len(self.fingerprints) * 20 + (len(self.fingerprints) - 1) * FingerprintArrow.WIDTH
+        self.components = []
+        x = 0
+        for index, fingerprint in enumerate(self.fingerprints):
+            if index:
+                self.components.append((x, FingerprintArrow(
+                    canvas=self.canvas, image_draw=self.image_draw,
+                    color=self.arrow_colors[index - 1] if self.arrow_colors is not None else self.arrow_color,
+                    background_color=self.arrow_background_color,
+                )))
+                x += FingerprintArrow.WIDTH
+            self.components.append((x, LifeHashIcon(
+                canvas=self.canvas, image_draw=self.image_draw, fingerprint=fingerprint, size=20,
+            )))
+            x += 20
+
+    def render(self):
+        for offset_x, component in self.components:
+            component.screen_x = self.screen_x + offset_x
+            component.screen_y = self.screen_y
+            component.render()
+
+
+@dataclass
+class FingerprintTransition(BaseComponent):
+    """Source and destination wallet identities, each with its full XFP."""
+    fingerprint_source: str = None
+    fingerprint_new: str = None
+    screen_y: int = 0
+    arrow_color: str = GUIConstants.BODY_FONT_COLOR
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.height = 20
+        self.components = []
+        font = Fonts.get_font(GUIConstants.FIXED_WIDTH_FONT_NAME, 16)
+        fingerprints = [self.fingerprint_source, self.fingerprint_new]
+        widths = [20 + GUIConstants.COMPONENT_PADDING // 2 + math.ceil(font.getlength(fp))
+                  for fp in fingerprints]
+        x = (self.canvas_width - sum(widths) - FingerprintArrow.WIDTH) // 2
+        for index, (fingerprint, width) in enumerate(zip(fingerprints, widths)):
+            self.components.append(IconTextLine(
+                canvas=self.canvas, image_draw=self.image_draw,
+                lifehash_fingerprint=fingerprint, lifehash_size=20,
+                value_text=fingerprint, font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=16, width=width,
+                screen_x=x, screen_y=self.screen_y,
+            ))
+            x += width
+            if index == 0:
+                self.components.append(FingerprintArrow(
+                    canvas=self.canvas, image_draw=self.image_draw,
+                    screen_x=x, screen_y=self.screen_y, color=self.arrow_color,
+                ))
+                x += FingerprintArrow.WIDTH
+
+    def render(self):
+        for component in self.components:
+            component.render()
+
+
+@dataclass
+class FingerprintHeader(BaseComponent):
+    """Compact wallet header: optional source tile, then current tile and XFP."""
+    fingerprint: str = None
+    fingerprint_source: str = None
+    screen_x: int = 0
+    screen_y: int = 0
+    width: int = None
+    arrow_color: str = GUIConstants.BODY_FONT_COLOR
+    fingerprints: Tuple[str, ...] = None
+    arrow_colors: Tuple[str, ...] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.height = 20
+        self.width = self.width if self.width is not None else self.canvas_width - self.screen_x
+        if self.fingerprints:
+            # A parent's derivation and the child's passphrase need three tiles.
+            # Use a smaller full XFP so the chain still fits beside Back at 240px.
+            self.font_size = 16 if len(self.fingerprints) > 2 else 20
+            font = Fonts.get_font(GUIConstants.FIXED_WIDTH_FONT_NAME, self.font_size)
+            text_width = math.ceil(font.getlength(self.fingerprint))
+            sequence = LifeHashSequence(
+                canvas=self.canvas, image_draw=self.image_draw,
+                fingerprints=self.fingerprints, arrow_color=self.arrow_color,
+                arrow_colors=self.arrow_colors, screen_y=self.screen_y,
+            )
+            self.content_width = sequence.width + GUIConstants.COMPONENT_PADDING // 2 + text_width
+            sequence.screen_x = self.screen_x + (self.width - self.content_width) // 2
+            self.components = [sequence, TextArea(
+                canvas=self.canvas, image_draw=self.image_draw,
+                text=self.fingerprint, font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=self.font_size, width=text_width, height=self.height,
+                screen_x=sequence.screen_x + sequence.width + GUIConstants.COMPONENT_PADDING // 2,
+                screen_y=self.screen_y, edge_padding=0, is_text_centered=False,
+                auto_line_break=False,
+            )]
+            return
+        font = Fonts.get_font(GUIConstants.FIXED_WIDTH_FONT_NAME, 20)
+        text_width = math.ceil(font.getlength(self.fingerprint))
+        current_width = 20 + GUIConstants.COMPONENT_PADDING // 2 + text_width
+        prefix_width = 20 + FingerprintArrow.WIDTH if self.fingerprint_source else 0
+        self.content_width = prefix_width + current_width
+        x = self.screen_x + (self.width - self.content_width) // 2
+        self.components = []
+        if self.fingerprint_source:
+            self.components.append(LifeHashIcon(
+                canvas=self.canvas, image_draw=self.image_draw,
+                fingerprint=self.fingerprint_source, size=20, screen_x=x, screen_y=self.screen_y,
+            ))
+            self.components.append(FingerprintArrow(
+                canvas=self.canvas, image_draw=self.image_draw,
+                screen_x=x + 20, screen_y=self.screen_y, color=self.arrow_color,
+            ))
+        self.components.append(IconTextLine(
+            canvas=self.canvas, image_draw=self.image_draw,
+            lifehash_fingerprint=self.fingerprint, lifehash_size=20,
+            value_text=self.fingerprint, font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+            font_size=20, width=current_width,
+            screen_x=x + prefix_width, screen_y=self.screen_y,
+        ))
+
+    def render(self):
+        for component in self.components:
+            component.render()
 
 
 
@@ -1343,6 +1559,9 @@ class Button(BaseComponent):
     width: int = None
     height: int = None
     icon_name: str = None   # Optional icon to accompany the text
+    lifehash_fingerprint: str = None
+    lifehash_fingerprints: Tuple[str, ...] = None
+    lifehash_size: int = 24
     icon_size: int = GUIConstants.ICON_INLINE_FONT_SIZE
     icon_color: str = GUIConstants.BUTTON_FONT_COLOR
     selected_icon_color: str = "black"
@@ -1351,6 +1570,7 @@ class Button(BaseComponent):
     right_icon_name: str = None    # Optional icon rendered right-justified
     right_icon_size: int = GUIConstants.ICON_INLINE_FONT_SIZE
     right_icon_color: str = GUIConstants.BUTTON_FONT_COLOR
+    selected_right_icon_color: str = None
     text_y_offset: int = 0
     background_color: str = GUIConstants.BUTTON_BACKGROUND_COLOR
     selected_color: str = GUIConstants.ACCENT_COLOR
@@ -1367,6 +1587,9 @@ class Button(BaseComponent):
     is_text_centered: bool = True
     is_selected: bool = False
     is_scrollable_text: bool = True  # True: active state will automatically scroll if necessary, text is rendered once (not dynamic)
+    lifehash_arrow_colors: Tuple[str, ...] = None
+    selected_lifehash_arrow_colors: Tuple[str, ...] = None
+    selected_right_icon_background_color: str = None
 
 
     def __post_init__(self):
@@ -1427,10 +1650,29 @@ class Button(BaseComponent):
                 self.text_y = self.height - int((self.height - self.text_height)/2)
 
         # Preload the icon and its "_selected" variant
-        icon_padding = GUIConstants.COMPONENT_PADDING
-        if self.icon_name:
-            self.icon = Icon(icon_name=self.icon_name, icon_size=self.icon_size, icon_color=self.icon_color)
-            self.icon_selected = Icon(icon_name=self.icon_name, icon_size=self.icon_size, icon_color=self.selected_icon_color)
+        icon_padding = GUIConstants.COMPONENT_PADDING // 2 if self.lifehash_fingerprints else GUIConstants.COMPONENT_PADDING
+        if self.icon_name or self.lifehash_fingerprint or self.lifehash_fingerprints:
+            if self.lifehash_fingerprints:
+                self.icon = LifeHashSequence(
+                    canvas=self.canvas, image_draw=self.image_draw,
+                    fingerprints=self.lifehash_fingerprints, arrow_color=self.icon_color,
+                    arrow_colors=self.lifehash_arrow_colors,
+                )
+                self.icon_selected = LifeHashSequence(
+                    canvas=self.canvas, image_draw=self.image_draw,
+                    fingerprints=self.lifehash_fingerprints, arrow_color=self.selected_icon_color,
+                    arrow_colors=self.selected_lifehash_arrow_colors,
+                    arrow_background_color=GUIConstants.BACKGROUND_COLOR if self.selected_lifehash_arrow_colors is not None else None,
+                )
+            elif self.lifehash_fingerprint:
+                self.icon = LifeHashIcon(
+                    canvas=self.canvas, image_draw=self.image_draw,
+                    fingerprint=self.lifehash_fingerprint, size=self.lifehash_size,
+                )
+                self.icon_selected = self.icon
+            else:
+                self.icon = Icon(icon_name=self.icon_name, icon_size=self.icon_size, icon_color=self.icon_color)
+                self.icon_selected = Icon(icon_name=self.icon_name, icon_size=self.icon_size, icon_color=self.selected_icon_color)
 
             if self.icon_y_offset:
                 self.icon_y = self.icon_y_offset
@@ -1472,7 +1714,10 @@ class Button(BaseComponent):
 
         if self.right_icon_name:
             self.right_icon = Icon(icon_name=self.right_icon_name, icon_size=self.right_icon_size, icon_color=self.right_icon_color)
-            self.right_icon_selected = Icon(icon_name=self.right_icon_name, icon_size=self.right_icon_size, icon_color=self.selected_icon_color)
+            self.right_icon_selected = Icon(
+                icon_name=self.right_icon_name, icon_size=self.right_icon_size,
+                icon_color=self.selected_right_icon_color if self.selected_right_icon_color is not None else self.selected_icon_color,
+            )
 
             self.visible_text_width -= self.right_icon.width + icon_padding
             if self.text_width > self.visible_text_width:
@@ -1498,8 +1743,8 @@ class Button(BaseComponent):
                 # Keep both the rendered label and its scrolling viewport clear
                 # of the right icon, including labels that only just overlap it.
                 width=self.width - (self.right_icon.width + icon_padding if self.right_icon_name else 0),
-                height=self.text_height if self.icon_name and not self.is_icon_inline else self.height,
-                min_text_x=self.text_x if self.icon_name and self.is_icon_inline else GUIConstants.COMPONENT_PADDING,
+                height=self.text_height if (self.icon_name or self.lifehash_fingerprint or self.lifehash_fingerprints) and not self.is_icon_inline else self.height,
+                min_text_x=self.text_x if (self.icon_name or self.lifehash_fingerprint or self.lifehash_fingerprints) and self.is_icon_inline else GUIConstants.COMPONENT_PADDING,
                 is_text_centered=self.is_text_centered,
                 height_ignores_below_baseline=True,  # Consistently vertically center text, ignoring chars that render below baseline (e.g. "pqyj")
                 horizontal_scroll_speed=30,  #px per sec
@@ -1588,7 +1833,7 @@ class Button(BaseComponent):
                     self.inactive_button_label.set_scroll_y(self.scroll_y)
                     self.inactive_button_label.render()
 
-        if self.icon_name:
+        if self.icon_name or self.lifehash_fingerprint or self.lifehash_fingerprints:
             icon = self.icon
             if self.is_selected:
                 icon = self.icon_selected
@@ -1602,6 +1847,12 @@ class Button(BaseComponent):
                 icon = self.right_icon_selected
             icon.screen_y = self.screen_y + self.right_icon_y - self.scroll_y
             icon.screen_x = self.screen_x + self.right_icon_x
+            if self.is_selected and self.selected_right_icon_background_color:
+                self.image_draw.rounded_rectangle(
+                    (icon.screen_x - 2, icon.screen_y - 2,
+                     icon.screen_x + icon.width + 2, icon.screen_y + icon.height + 2),
+                    radius=3, fill=self.selected_right_icon_background_color,
+                )
             icon.render()
 
 
@@ -1673,6 +1924,11 @@ class TopNav(BaseComponent):
     background_color: str = GUIConstants.BACKGROUND_COLOR
     icon_name: str = None
     icon_color: str = GUIConstants.BODY_FONT_COLOR
+    lifehash_fingerprint: str = None
+    lifehash_fingerprint_source: str = None
+    lifehash_arrow_color: str = GUIConstants.BODY_FONT_COLOR
+    lifehash_fingerprints: Tuple[str, ...] = None
+    lifehash_arrow_colors: Tuple[str, ...] = None
 
     # Cannot define these class attrs w/the get_*_font_*() methods because the attrs will
     # not be dynamically reinterpreted after initial class import.
@@ -1721,13 +1977,26 @@ class TopNav(BaseComponent):
             # Don't let the title intrude on the BACK button
             min_text_x = self.left_button.screen_x + self.left_button.width + GUIConstants.COMPONENT_PADDING
 
-        if self.icon_name:
+        if self.lifehash_fingerprint:
+            max_text_x = self.right_button.screen_x - GUIConstants.COMPONENT_PADDING if self.show_power_button else self.width - GUIConstants.EDGE_PADDING
+            self.title = FingerprintHeader(
+                fingerprint=self.lifehash_fingerprint,
+                fingerprint_source=self.lifehash_fingerprint_source,
+                arrow_color=self.lifehash_arrow_color,
+                fingerprints=self.lifehash_fingerprints,
+                arrow_colors=self.lifehash_arrow_colors,
+                screen_x=min_text_x,
+                screen_y=(self.height - 20) // 2,
+                width=max_text_x - min_text_x,
+            )
+        elif self.icon_name:
             # TODO: Refactor IconTextLine to use ScrollableTextLine
             self.title = IconTextLine(
                 screen_x=0,
                 screen_y=0,
                 height=self.height,
                 icon_name=self.icon_name,
+                lifehash_fingerprint=self.lifehash_fingerprint,
                 icon_color=self.icon_color,
                 icon_size=GUIConstants.ICON_FONT_SIZE + 4,
                 value_text=self.text,

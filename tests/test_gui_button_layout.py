@@ -25,8 +25,8 @@ class TestButtonRightIconLayout(BaseTest):
 
     @pytest.mark.parametrize("selected", [False, True])
     @pytest.mark.parametrize("locale,label,icon,color", [
-        ("fr", "BIP-39 Passphrase", SeedSignerIconConstants.CHECK, GUIConstants.INFO_COLOR),
-        ("cs", "BIP-85 child seed", SeedSignerIconConstants.CHECK, GUIConstants.INFO_COLOR),
+        ("fr", "BIP-39 Passphrase", SeedSignerIconConstants.CHECK, GUIConstants.PASSPHRASE_COLOR),
+        ("cs", "BIP-85 child seed", SeedSignerIconConstants.CHECK, GUIConstants.BIP85_COLOR),
         ("fr", "BIP-39 Passphrase", SeedSignerIconConstants.CHEVRON_RIGHT, GUIConstants.BODY_FONT_COLOR),
     ])
     def test_translated_label_respects_right_icon_in_both_states(
@@ -37,6 +37,8 @@ class TestButtonRightIconLayout(BaseTest):
             text=_(label), screen_x=8, screen_y=100, width=224,
             is_text_centered=False, is_selected=selected,
             right_icon_name=icon, right_icon_color=color,
+            selected_right_icon_color=color,
+            selected_right_icon_background_color=GUIConstants.BACKGROUND_COLOR,
         )
         # These translations fit the old full-width viewport but overlap the
         # right icon. Previously they were clipped without ever scrolling.

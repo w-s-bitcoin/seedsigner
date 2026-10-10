@@ -426,6 +426,7 @@ class SeedFinalizeScreen(ButtonListScreen):
         super().__post_init__()
 
         self.fingerprint_icontl = IconTextLine(
+            lifehash_fingerprint=self.fingerprint,
             icon_name=SeedSignerIconConstants.FINGERPRINT,
             icon_color=GUIConstants.INFO_COLOR,
             icon_size=GUIConstants.ICON_FONT_SIZE + 12,
@@ -444,6 +445,7 @@ class SeedOptionsScreen(ButtonListScreen):
     fingerprint: str = None
 
     def __post_init__(self):
+        self.top_nav_lifehash_fingerprint = self.fingerprint
         self.top_nav_icon_name = SeedSignerIconConstants.FINGERPRINT
         self.top_nav_icon_color = GUIConstants.INFO_COLOR
         self.title = self.fingerprint
@@ -605,6 +607,7 @@ class SeedExportXpubDetailsScreen(WarningEdgesMixin, ButtonListScreen):
 
         # Set up the fingerprint and passphrase displays
         self.fingerprint_line = IconTextLine(
+            lifehash_fingerprint=self.fingerprint,
             icon_name=SeedSignerIconConstants.FINGERPRINT,
             icon_color=GUIConstants.INFO_COLOR,
             # TRANSLATOR_NOTE: Short for "BIP-32 Master Fingerprint"
@@ -1063,6 +1066,8 @@ class SeedReviewPassphraseScreen(ButtonListScreen):
         super().__post_init__()
 
         self.components.append(IconTextLine(
+            lifehash_fingerprint=self.fingerprint_with,
+            lifehash_size=24,
             icon_name=SeedSignerIconConstants.FINGERPRINT,
             icon_color=GUIConstants.INFO_COLOR,
             # TRANSLATOR_NOTE: Describes the effect of applying a BIP-39 passphrase; it changes the seed's fingerprint
@@ -1575,8 +1580,10 @@ class LoadMultisigWalletDescriptorScreen(ButtonListScreen):
 
 @dataclass
 class MultisigWalletDescriptorScreen(ButtonListScreen):
+    FINGERPRINTS_PER_PAGE = 4
     policy: str = None
     fingerprints: List[str] = None
+    page_index: int = 0
 
     def __post_init__(self):
         self.title = _("Descriptor Loaded")
@@ -1592,15 +1599,28 @@ class MultisigWalletDescriptorScreen(ButtonListScreen):
             is_text_centered=True,
         ))
 
-        self.components.append(IconTextLine(
-            label_text=_("Signing Keys"),
-            value_text=" ".join(self.fingerprints),
-            font_size=24,
-            font_name=GUIConstants.FIXED_WIDTH_EMPHASIS_FONT_NAME,
+        pages = math.ceil(len(self.fingerprints) / self.FINGERPRINTS_PER_PAGE)
+        label = _("Signing Keys")
+        if pages > 1:
+            label += f" {self.page_index + 1}/{pages}"
+        self.components.append(TextArea(
+            text=label,
+            font_size=18,
             screen_y=self.components[-1].screen_y + self.components[-1].height + 2*GUIConstants.COMPONENT_PADDING,
             is_text_centered=True,
-            auto_line_break=True,
         ))
+        row_y = self.components[-1].screen_y + self.components[-1].height + GUIConstants.COMPONENT_PADDING
+        start = self.page_index * self.FINGERPRINTS_PER_PAGE
+        for index, fingerprint in enumerate(self.fingerprints[start:start + self.FINGERPRINTS_PER_PAGE]):
+            self.components.append(IconTextLine(
+                lifehash_fingerprint=fingerprint, lifehash_size=24,
+                value_text=fingerprint, font_size=16,
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                screen_x=GUIConstants.EDGE_PADDING + (index % 2) * (self.canvas_width // 2),
+                screen_y=row_y + (index // 2) * 32,
+                width=self.canvas_width // 2 - 2 * GUIConstants.EDGE_PADDING,
+                is_text_centered=True,
+            ))
 
 
 
