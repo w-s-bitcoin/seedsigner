@@ -11,7 +11,7 @@ permissions:
 
 env:
   APP_REPOSITORY: https://github.com/w-s-bitcoin/seedsigner.git
-  APP_COMMIT: fe1af00982ad8bf1f7344317739ac21d8d5460be
+  APP_COMMIT: 4ae50510efb65a08ab588d188d81a72666a210f9
   BUILDER_COMMIT: c4cb767a00ace8edf5e9414450c2849e15958ad7
 
 jobs:
@@ -100,7 +100,7 @@ jobs:
       - name: Upload the Pi Zero image, checksum, and metadata
         uses: actions/upload-artifact@v4
         with:
-          name: seedsigner-pi0-fe1af00982ad8bf1f7344317739ac21d8d5460be
+          name: seedsigner-pi0-4ae50510efb65a08ab588d188d81a72666a210f9
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
