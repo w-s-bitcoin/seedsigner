@@ -81,3 +81,10 @@ Generate the interactive html report:
 ```bash
 coverage html
 ```
+## LifeHash rendering checks
+
+Run `pytest tests/test_lifehash.py tests/test_flows_lifehash.py` for the pinned
+reference images, public-input validation, descriptor pagination, and PSBT signer
+metadata. Existing screenshot-generator cases exercise the native display
+integrations. See [LifeHash compatibility notes](../docs/lifehash.md) for the
+reference revision, byte order, numerical behavior, and comparison limits.

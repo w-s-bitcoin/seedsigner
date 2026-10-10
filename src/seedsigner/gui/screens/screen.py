@@ -9,7 +9,7 @@ from typing import Any, List, Tuple
 
 from seedsigner.helpers.l10n import mark_for_translation as _mft
 from seedsigner.gui.components import (GUIConstants,
-    BaseComponent, Button, Icon, IconButton, LargeIconButton,
+    BaseComponent, Button, Icon, IconButton, IconTextLine, LargeIconButton,
     SeedSignerIconConstants, TopNav, TextArea, load_image)
 from seedsigner.gui.keyboard import Keyboard, TextEntryDisplay
 from seedsigner.hardware.buttons import HardwareButtonsConstants, HardwareButtons
@@ -208,6 +208,11 @@ class LoadingScreenThread(BaseThread):
 class BaseTopNavScreen(BaseScreen):
     top_nav_icon_name: str = None
     top_nav_icon_color: str = None
+    top_nav_lifehash_fingerprint: str = None
+    top_nav_lifehash_fingerprint_source: str = None
+    top_nav_lifehash_arrow_color: str = GUIConstants.BODY_FONT_COLOR
+    top_nav_lifehash_fingerprints: Tuple[str, ...] = None
+    top_nav_lifehash_arrow_colors: Tuple[str, ...] = None
     title: str = "Screen Title"
     title_font_size: int = GUIConstants.get_top_nav_title_font_size()
     show_back_button: bool = True
@@ -218,6 +223,11 @@ class BaseTopNavScreen(BaseScreen):
         self.top_nav = TopNav(
             icon_name=self.top_nav_icon_name,
             icon_color=self.top_nav_icon_color,
+            lifehash_fingerprint=self.top_nav_lifehash_fingerprint,
+            lifehash_fingerprint_source=self.top_nav_lifehash_fingerprint_source,
+            lifehash_arrow_color=self.top_nav_lifehash_arrow_color,
+            lifehash_fingerprints=self.top_nav_lifehash_fingerprints,
+            lifehash_arrow_colors=self.top_nav_lifehash_arrow_colors,
             text=_(self.title),  # Wrap here for just-in-time translations
             font_size=self.title_font_size,
             width=self.canvas_width,
@@ -280,6 +290,13 @@ class ButtonOption:
     active_button_label: str = None  # Changes displayed button label when button is active
     font_name: str = None  # Optional override
     font_size: int = None  # Optional override
+    lifehash_fingerprint: str = None
+    right_icon_color: str = None
+    selected_right_icon_color: str = None
+    lifehash_fingerprints: Tuple[str, ...] = None
+    lifehash_arrow_colors: Tuple[str, ...] = None
+    selected_lifehash_arrow_colors: Tuple[str, ...] = None
+    selected_right_icon_background_color: str = None
 
 
 
@@ -367,9 +384,16 @@ class ButtonListScreen(BaseTopNavScreen):
                 text=button_label,
                 active_text=active_button_label,
                 icon_name=button_option.icon_name,
+                lifehash_fingerprint=button_option.lifehash_fingerprint,
+                lifehash_fingerprints=button_option.lifehash_fingerprints,
+                lifehash_arrow_colors=button_option.lifehash_arrow_colors,
+                selected_lifehash_arrow_colors=button_option.selected_lifehash_arrow_colors,
                 icon_color=button_option.icon_color if button_option.icon_color else GUIConstants.BUTTON_FONT_COLOR,
                 is_icon_inline=True,
                 right_icon_name=button_option.right_icon_name,
+                right_icon_color=button_option.right_icon_color if button_option.right_icon_color else GUIConstants.BUTTON_FONT_COLOR,
+                selected_right_icon_color=button_option.selected_right_icon_color,
+                selected_right_icon_background_color=button_option.selected_right_icon_background_color,
                 screen_x=GUIConstants.EDGE_PADDING,
                 screen_y=button_list_y + i * (button_height + GUIConstants.LIST_ITEM_PADDING),
                 scroll_y=self.scroll_y_initial_offset if self.scroll_y_initial_offset is not None else 0,
@@ -920,6 +944,7 @@ class LargeIconStatusScreen(ButtonListScreen):
     status_headline: str = None
     text: str = ""                          # The body text of the screen
     text_edge_padding: int = GUIConstants.EDGE_PADDING
+    lifehash_fingerprint: str = None
     button_data: list = None
 
 
@@ -929,13 +954,21 @@ class LargeIconStatusScreen(ButtonListScreen):
         self.is_bottom_list = True
         super().__post_init__()
 
-        self.status_icon = Icon(
+        self.status_icon = IconTextLine(
+            lifehash_fingerprint=self.lifehash_fingerprint,
+            value_text=self.lifehash_fingerprint,
+            font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+            font_size=24,
+            is_text_centered=True,
+            screen_y=self.top_nav.height - int(GUIConstants.COMPONENT_PADDING/2),
+        ) if self.lifehash_fingerprint else Icon(
             icon_name=self.status_icon_name,
             icon_size=self.status_icon_size,
             icon_color=self.status_color,
         )
         self.status_icon.screen_y = self.top_nav.height - int(GUIConstants.COMPONENT_PADDING/2)
-        self.status_icon.screen_x = int((self.canvas_width - self.status_icon.width) / 2)
+        if not self.lifehash_fingerprint:
+            self.status_icon.screen_x = int((self.canvas_width - self.status_icon.width) / 2)
         self.components.append(self.status_icon)
 
         next_y = self.status_icon.screen_y + self.status_icon.height + int(GUIConstants.COMPONENT_PADDING/2)

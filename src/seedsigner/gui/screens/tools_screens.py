@@ -567,6 +567,7 @@ class ToolsCalcFinalWordDoneScreen(ButtonListScreen):
 
         self.components.append(IconTextLine(
             icon_name=SeedSignerIconConstants.FINGERPRINT,
+            lifehash_fingerprint=self.fingerprint,
             icon_color=GUIConstants.INFO_COLOR,
             # TRANSLATOR_NOTE: a label for the shortened Key-id of a BIP-32 master HD wallet
             label_text=_("fingerprint"),
@@ -593,6 +594,7 @@ class ToolsAddressExplorerAddressTypeScreen(ButtonListScreen):
         if self.fingerprint:
             self.components.append(IconTextLine(
                 icon_name=SeedSignerIconConstants.FINGERPRINT,
+                lifehash_fingerprint=self.fingerprint,
                 icon_color=GUIConstants.INFO_COLOR,
                 # TRANSLATOR_NOTE: a label for the shortened Key-id of a BIP-32 master HD wallet
                 label_text=_("Fingerprint"),

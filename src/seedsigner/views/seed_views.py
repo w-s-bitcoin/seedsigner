@@ -42,7 +42,8 @@ class SeedsMenuView(View):
 
         button_data = []
         for seed in self.seeds:
-            button_data.append(ButtonOption(seed["fingerprint"], SeedSignerIconConstants.FINGERPRINT))
+            button_data.append(ButtonOption(seed["fingerprint"], SeedSignerIconConstants.FINGERPRINT,
+                                            lifehash_fingerprint=seed["fingerprint"]))
         button_data.append(self.LOAD)
 
         selected_menu_num = self.run_screen(
@@ -107,7 +108,8 @@ class SeedSelectSeedView(View):
         button_data = []
         for seed in seeds:
             button_str = seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK))
-            button_data.append(ButtonOption(button_str, SeedSignerIconConstants.FINGERPRINT, icon_color="blue"))
+            button_data.append(ButtonOption(button_str, SeedSignerIconConstants.FINGERPRINT, icon_color="blue",
+                                            lifehash_fingerprint=button_str))
         
         button_data.append(self.SCAN_SEED)
         button_data.append(self.TYPE_12WORD)
@@ -484,13 +486,13 @@ class SeedDiscardView(View):
         button_data = [self.KEEP, self.DISCARD]
 
         fingerprint = self.seed.get_fingerprint(self.settings.get_value(SettingsConstants.SETTING__NETWORK))
-        # TRANSLATOR_NOTE: Inserts the seed fingerprint
-        text = _("Wipe seed {} from the device?").format(fingerprint)
+        text = _("Wipe this seed from the device?")
         selected_menu_num = self.run_screen(
             WarningScreen,
             title=_("Discard Seed?"),
             status_headline=None,
             text=text,
+            lifehash_fingerprint=fingerprint,
             show_back_button=False,
             button_data=button_data,
         )
@@ -2067,6 +2069,11 @@ class MultisigWalletDescriptorView(View):
     VERIFY_ADDR = ButtonOption("Verify addr")
     ADDRESS_EXPLORER = ButtonOption("Address explorer")
     OK = ButtonOption("OK")
+    NEXT = ButtonOption("Next")
+
+    def __init__(self, page_index: int = 0):
+        super().__init__()
+        self.page_index = page_index
 
     def run(self):
         descriptor = self.controller.multisig_wallet_descriptor
@@ -2092,16 +2099,27 @@ class MultisigWalletDescriptorView(View):
             elif self.controller.resume_main_flow == Controller.FLOW__ADDRESS_EXPLORER:
                 button_data = [self.ADDRESS_EXPLORER]
 
+        page_size = seed_screens.MultisigWalletDescriptorScreen.FINGERPRINTS_PER_PAGE
+        if (self.page_index + 1) * page_size < len(fingerprints):
+            # Every signing key keeps both its hex fingerprint and LifeHash;
+            # review additional keys before continuing the original flow.
+            button_data = [self.NEXT]
+
         selected_menu_num = self.run_screen(
             seed_screens.MultisigWalletDescriptorScreen,
             policy=policy,
             fingerprints=fingerprints,
+            page_index=self.page_index,
             button_data=button_data,
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
-            self.controller.multisig_wallet_descriptor = None
+            if self.page_index == 0:
+                self.controller.multisig_wallet_descriptor = None
             return Destination(BackStackView)
+
+        elif button_data[selected_menu_num] == self.NEXT:
+            return Destination(MultisigWalletDescriptorView, view_args={"page_index": self.page_index + 1})
         
         elif button_data[selected_menu_num] == self.RETURN:
             # Jump straight back to PSBT change verification
