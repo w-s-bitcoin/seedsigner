@@ -10,7 +10,7 @@ from seedsigner.views.view import MainMenuView
 
 
 MNEMONIC = ["abandon"] * 11 + ["about"]
-KINDS = ["regular", "passphrased"]
+KINDS = ["regular", "passphrased", "child", "passphrased_child"]
 WALLET_STATE = (
     "psbt", "psbt_parser", "psbt_seed", "resume_main_flow",
     "multisig_wallet_descriptor", "unverified_address",
@@ -20,8 +20,15 @@ WALLET_STATE = (
 
 class TestSeedDiscardFlows(FlowTest):
     def load_wallets(self, kind, multiple):
-        self.target = Seed(MNEMONIC, "TREZOR" if kind == "passphrased" else "")
-        self.related = Seed(MNEMONIC, "another loaded wallet")
+        parent = Seed(MNEMONIC, "TREZOR" if kind != "regular" else "")
+        child = Seed(
+            parent.get_bip85_child_mnemonic(0, 12).split(),
+            "child extension" if kind == "passphrased_child" else "",
+            bip85_parent_fingerprint=parent.get_fingerprint(),
+            bip85_child_index=0, bip85_num_words=12,
+        )
+        self.target = child if kind in ("child", "passphrased_child") else parent
+        self.related = parent if self.target is child else child
         self.pending = Seed(MNEMONIC, "unrelated pending entry")
         if multiple:
             self.originals = [Seed(MNEMONIC, "first other wallet"), self.target,
@@ -31,8 +38,10 @@ class TestSeedDiscardFlows(FlowTest):
         self.controller.storage.seeds = list(self.originals)
         self.controller.storage.set_pending_seed(self.pending)
         self.settings.set_value(SettingsConstants.SETTING__PASSPHRASE, SettingsConstants.OPTION__ENABLED)
+        self.settings.set_value(SettingsConstants.SETTING__BIP85_CHILD_SEEDS, SettingsConstants.OPTION__ENABLED)
         self.original_state = [
-            (seed.seed_bytes, seed.passphrase)
+            (seed.seed_bytes, seed.passphrase, seed.is_bip85_child,
+             seed.bip85_parent_fingerprint, seed.bip85_child_index, seed.bip85_num_words)
             for seed in self.originals
         ]
 
@@ -55,7 +64,8 @@ class TestSeedDiscardFlows(FlowTest):
     def assert_original_objects_unchanged(self):
         for seed, state in zip(self.originals, self.original_state):
             assert seed.seed_bytes is state[0]
-            assert seed.passphrase == state[1]
+            assert (seed.passphrase, seed.is_bip85_child, seed.bip85_parent_fingerprint,
+                    seed.bip85_child_index, seed.bip85_num_words) == state[1:]
 
     @pytest.mark.parametrize("kind", KINDS)
     @pytest.mark.parametrize("multiple", [False, True], ids=["last_seed", "other_seeds_remain"])
@@ -137,7 +147,7 @@ class TestSeedDiscardFlows(FlowTest):
     @pytest.mark.parametrize("equal_reimport", [False, True])
     @pytest.mark.parametrize("discard", [False, True], ids=["keep", "discard"])
     def test_discard_rechecks_identity_after_screen_selection(self, monkeypatch, equal_reimport, discard):
-        self.load_wallets("passphrased", multiple=False)
+        self.load_wallets("passphrased_child", multiple=False)
         canonical = Seed(self.target.mnemonic_list, self.target.passphrase)
         view = seed_views.SeedDiscardView(self.target)
         assert not view.has_redirect

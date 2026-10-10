@@ -662,5 +662,6 @@ class TestLoadedSeedPassphraseFlows(FlowTest):
 
         self.run_sequence([
             FlowStep(seed_views.SeedOptionsView, before_run=inspect_menu, screen_return_value=RET_CODE__BACK_BUTTON),
+            FlowStep(seed_views.SeedsMenuView, screen_return_value=RET_CODE__BACK_BUTTON),
             FlowStep(MainMenuView),
         ], initial_destination_view_args=dict(seed=seed))

@@ -444,6 +444,7 @@ class SeedFinalizeScreen(ButtonListScreen):
 class SeedOptionsScreen(ButtonListScreen):
     fingerprint: str = None
     fingerprint_without: str = None
+    fingerprint_parent: str = None
     checked_button_indices: List[int] = None
     checked_button_colors: dict[int, str] = None
     selected_checked_button_colors: dict[int, str] = None
@@ -452,6 +453,9 @@ class SeedOptionsScreen(ButtonListScreen):
         self.top_nav_lifehash_fingerprint = self.fingerprint
         self.top_nav_lifehash_fingerprint_source = self.fingerprint_without
         self.top_nav_lifehash_arrow_color = GUIConstants.PASSPHRASE_COLOR
+        if self.fingerprint_parent and not self.fingerprint_without:
+            self.top_nav_lifehash_fingerprint_source = self.fingerprint_parent
+            self.top_nav_lifehash_arrow_color = GUIConstants.BIP85_COLOR
         self.top_nav_icon_name = SeedSignerIconConstants.FINGERPRINT
         self.top_nav_icon_color = GUIConstants.INFO_COLOR
         self.title = self.fingerprint
@@ -482,17 +486,33 @@ class SeedWordsScreen(WarningEdgesMixin, ButtonListScreen):
     num_pages: int = 3
     is_bottom_list: bool = True
     status_color: str = GUIConstants.DIRE_WARNING_COLOR
+    fingerprint_parent: str = None
+    fingerprint_child: str = None
+    child_index: int = None
 
 
     def __post_init__(self):
-        # TRANSLATOR_NOTE: Displays the page number and total: (e.g. page 1 of 6)
-        self.title = _("Seed Words: {}/{}").format(self.page_index + 1, self.num_pages)
+        if self.fingerprint_parent and self.fingerprint_child:
+            self.top_nav_lifehash_fingerprint_source = self.fingerprint_parent
+            self.top_nav_lifehash_fingerprint = self.fingerprint_child
+            self.top_nav_lifehash_arrow_color = GUIConstants.BIP85_COLOR
+            self.title = self.fingerprint_child
+        else:
+            # TRANSLATOR_NOTE: Displays the page number and total: (e.g. page 1 of 6)
+            self.title = _("Seed Words: {}/{}").format(self.page_index + 1, self.num_pages)
         super().__post_init__()
 
         words_per_page = len(self.words)
 
         self.body_x = 0
         self.body_y = self.top_nav.height - int(GUIConstants.COMPONENT_PADDING / 2)
+        if self.fingerprint_child:
+            self.components.append(TextArea(
+                # TRANSLATOR_NOTE: BIP-85 child index, current word page and total pages.
+                text=_("Child #{}: {}/{}").format(self.child_index, self.page_index + 1, self.num_pages),
+                screen_y=self.top_nav.height, font_size=14, auto_line_break=False,
+            ))
+            self.body_y = self.top_nav.height + 28
         self.body_height = self.buttons[0].screen_y - self.body_y
 
         # Have to supersample the whole body since it's all at the small font size
@@ -559,10 +579,68 @@ class SeedWordsScreen(WarningEdgesMixin, ButtonListScreen):
 
 
 @dataclass
+class SeedBIP85ReviewScreen(ButtonListScreen):
+    fingerprint_parent: str = None
+    fingerprint_child: str = None
+    child_index: int = 0
+    num_words: int = 12
+
+    def __post_init__(self):
+        self.title = _("BIP-85 Child")
+        self.is_bottom_list = True
+        super().__post_init__()
+        transition = FingerprintTransition(
+            fingerprint_source=self.fingerprint_parent,
+            fingerprint_new=self.fingerprint_child,
+            arrow_color=GUIConstants.BIP85_COLOR,
+            screen_y=self.top_nav.height + 32,
+        )
+        identities = [component for component in transition.components if isinstance(component, IconTextLine)]
+        for text, identity in zip([_("Parent"), _("Child")], identities):
+            self.components.append(TextArea(
+                text=text, font_size=14, screen_x=identity.screen_x,
+                screen_y=self.top_nav.height + 8, width=identity.width,
+                edge_padding=0, auto_line_break=False,
+            ))
+        self.components.append(transition)
+        self.components.append(TextArea(
+            text=_("Child #{}").format(self.child_index),
+            screen_y=self.top_nav.height + 76, font_size=20,
+        ))
+        self.components.append(TextArea(
+            # TRANSLATOR_NOTE: Number of BIP-39 words in a derived BIP-85 child seed.
+            text=_("{} words").format(self.num_words),
+            screen_y=self.top_nav.height + 106, font_size=18,
+        ))
+
+
+@dataclass
+class SeedBIP85ChildMenuScreen(ButtonListScreen):
+    child_index: int = None
+    num_words: int = None
+
+    def __post_init__(self):
+        self.title = _("BIP-85 Child")
+        self.is_bottom_list = True
+        super().__post_init__()
+        if self.child_index is not None and self.num_words is not None:
+            self.components.append(TextArea(
+                text=_("Child #{}").format(self.child_index),
+                screen_y=self.top_nav.height + 24, font_size=20,
+            ))
+            self.components.append(TextArea(
+                text=_("{} words").format(self.num_words),
+                screen_y=self.top_nav.height + 58, font_size=18,
+            ))
+
+
+@dataclass
 class SeedBIP85SelectChildIndexScreen(KeyboardScreen):
+    initial_index: int = None
+
     def __post_init__(self):
         self.title = _("BIP-85 Index")
-        self.user_input = ""
+        self.initial_value = "" if self.initial_index is None else str(self.initial_index)
 
         # Specify the keys in the keyboard
         self.rows = 3
@@ -577,14 +655,16 @@ class SeedBIP85SelectChildIndexScreen(KeyboardScreen):
 
 @dataclass
 class SeedWordsBackupTestPromptScreen(ButtonListScreen):
+    is_bip85_child: bool = False
+
     def __post_init__(self):
-        self.title = _("Verify Backup?")
+        self.title = _("Load Child Seed?") if self.is_bip85_child else _("Verify Backup?")
         self.show_back_button = False
         self.is_bottom_list = True
         super().__post_init__()
 
         self.components.append(TextArea(
-            text=_("Optionally verify that your mnemonic backup is correct."),
+            text=_("Verify your backup, or load this child seed now.") if self.is_bip85_child else _("Optionally verify that your mnemonic backup is correct."),
             screen_y=self.top_nav.height,
             is_text_centered=True,
         ))
@@ -1118,7 +1198,6 @@ class SeedReviewPassphraseScreen(ButtonListScreen):
             ))
 
 
-
 @dataclass
 class SeedConfirmPassphraseScreen(ButtonListScreen):
     """Review a candidate without ever changing the currently loaded wallet."""
@@ -1187,7 +1266,6 @@ class SeedConfirmPassphraseScreen(ButtonListScreen):
             ))
 
 
-
 @dataclass
 class SeedWalletSaveScreen(ButtonListScreen):
     """Choose how to retain a reviewed wallet, showing only its public identity."""
@@ -1214,7 +1292,6 @@ class SeedWalletSaveScreen(ButtonListScreen):
         ))
 
 
-
 @dataclass
 class SeedPassphraseSaveScreen(SeedWalletSaveScreen):
     fingerprint_without: str = None
@@ -1222,6 +1299,16 @@ class SeedPassphraseSaveScreen(SeedWalletSaveScreen):
 
     def __post_init__(self):
         self.fingerprint_source = self.fingerprint_without
+        super().__post_init__()
+
+
+@dataclass
+class SeedBIP85SaveChildScreen(SeedWalletSaveScreen):
+    fingerprint_parent: str = None
+    arrow_color: str = GUIConstants.BIP85_COLOR
+
+    def __post_init__(self):
+        self.fingerprint_source = self.fingerprint_parent
         super().__post_init__()
 
 

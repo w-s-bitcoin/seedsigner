@@ -339,7 +339,14 @@ class ST7789(BaseDisplayDriver):
         """
         for command, data, delay in commands:
             self._write(command, data)
+            if command in (_ST7789_INVON, _ST7789_INVOFF):
+                self.inverted = command == _ST7789_INVON
             sleep_ms(delay)
+
+    @property
+    def colors_inverted(self) -> bool:
+        # INVON produces normal colors on the supported ST7789 panel.
+        return not self.inverted
 
     def invert(self, enabled: bool = True):
         self.inversion_mode(enabled)
@@ -394,12 +401,14 @@ class ST7789(BaseDisplayDriver):
         sleep_ms(120)
         if self.cs:
             GPIO.output(self.cs, GPIO.HIGH)
+        self.inverted = False
 
     def soft_reset(self):
         """
         Soft reset display.
         """
         self._write(_ST7789_SWRESET)
+        self.inverted = False
         sleep_ms(150)
 
     def sleep_mode(self, value):
@@ -427,6 +436,7 @@ class ST7789(BaseDisplayDriver):
             self._write(_ST7789_INVON)
         else:
             self._write(_ST7789_INVOFF)
+        self.inverted = bool(value)
 
     def rotation(self, rotation):
         """

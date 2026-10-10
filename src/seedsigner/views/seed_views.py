@@ -35,10 +35,15 @@ class SeedsMenuView(View):
             fingerprints = []
             arrow_colors = []
             selected_arrow_colors = []
+            # Display only the immediate relationship, even for a passphrased child.
             if seed.has_passphrase:
                 fingerprints.append(seed.get_fingerprint_without_passphrase(network))
                 arrow_colors.append(GUIConstants.PASSPHRASE_COLOR)
                 selected_arrow_colors.append(GUIConstants.PASSPHRASE_COLOR_SELECTED)
+            elif seed.bip85_parent_fingerprint is not None:
+                fingerprints.append(seed.bip85_parent_fingerprint)
+                arrow_colors.append(GUIConstants.BIP85_COLOR)
+                selected_arrow_colors.append(GUIConstants.BIP85_COLOR_SELECTED)
             fingerprints.append(fingerprint)
             self.seeds.append({
                 "fingerprint": fingerprint,
@@ -487,6 +492,10 @@ class SeedLoadedPassphraseView(View):
             mnemonic=seed.mnemonic_list,
             passphrase=seed.passphrase if passphrase is None else passphrase,
             wordlist_language_code=seed.wordlist_language_code,
+            is_bip85_child=seed.is_bip85_child,
+            bip85_parent_fingerprint=seed.bip85_parent_fingerprint,
+            bip85_child_index=seed.bip85_child_index,
+            bip85_num_words=seed.bip85_num_words,
         )
 
     def validate_source(self):
@@ -797,7 +806,10 @@ class SeedOptionsView(View):
         checked_button_colors = {}
         selected_checked_button_colors = {}
         for index, option in enumerate(button_data):
-            if option == self.PASSPHRASE and self.seed.has_passphrase:
+            if option == self.BIP85_CHILD_SEED and self.seed.is_bip85_child:
+                checked_button_colors[index] = GUIConstants.BIP85_COLOR
+                selected_checked_button_colors[index] = GUIConstants.BIP85_COLOR_SELECTED
+            elif option == self.PASSPHRASE and self.seed.has_passphrase:
                 checked_button_colors[index] = GUIConstants.PASSPHRASE_COLOR
                 selected_checked_button_colors[index] = GUIConstants.PASSPHRASE_COLOR_SELECTED
         
@@ -807,14 +819,17 @@ class SeedOptionsView(View):
             fingerprint=self.seed.get_fingerprint(network),
             fingerprint_without=(self.seed.get_fingerprint_without_passphrase(network)
                                  if self.seed.has_passphrase else None),
+            fingerprint_parent=self.seed.bip85_parent_fingerprint,
             checked_button_indices=list(checked_button_colors),
             checked_button_colors=checked_button_colors,
             selected_checked_button_colors=selected_checked_button_colors,
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
-            # Force BACK to always return to the Main Menu
-            return Destination(MainMenuView)
+            # Leaving a wallet still clears its workflow state, even when we
+            # return to the seed list instead of passing through Home.
+            self.controller.clear_wallet_state()
+            return Destination(SeedsMenuView, clear_history=True)
 
         if button_data[selected_menu_num] == self.SCAN_PSBT:
             from seedsigner.views.scan_views import ScanPSBTView
@@ -838,7 +853,8 @@ class SeedOptionsView(View):
             return Destination(SeedBackupView, view_args=dict(seed=self.seed))
 
         elif button_data[selected_menu_num] == self.BIP85_CHILD_SEED:
-            return Destination(SeedBIP85SelectNumWordsView, view_args={"seed": self.seed})
+            return Destination(SeedBIP85ChildMenuView if self.seed.is_bip85_child else SeedBIP85SelectNumWordsView,
+                               view_args={"seed": self.seed})
 
         elif button_data[selected_menu_num] == self.PASSPHRASE:
             return Destination(SeedPassphraseMenuView, view_args={"seed": self.seed})
@@ -1274,11 +1290,19 @@ class SeedWordsView(View):
 
 
     def run(self):
-        # Slice the mnemonic to our current 4-word section
-        words_per_page = 4  # TODO: eventually make this configurable for bigger screens?
+        words_per_page = 4
+        identity_kwargs = {}
 
         if self.bip85_data is not None:
             mnemonic = self.seed.get_bip85_child_mnemonic(self.bip85_data["child_index"], self.bip85_data["num_words"]).split()
+            # Leave room for the parent -> child identity and child/page context.
+            words_per_page = 3
+            network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+            identity_kwargs = dict(
+                fingerprint_parent=self.seed.get_fingerprint(network),
+                fingerprint_child=Seed(mnemonic).get_fingerprint(network),
+                child_index=self.bip85_data["child_index"],
+            )
             # TRANSLATOR_NOTE: Inserts the child index (e.g. "Child #0")
             title = _("Child #{}").format(self.bip85_data["child_index"])
         else:
@@ -1300,6 +1324,7 @@ class SeedWordsView(View):
             page_index=self.page_index,
             num_pages=num_pages,
             button_data=button_data,
+            **identity_kwargs,
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
@@ -1332,6 +1357,97 @@ class SeedWordsView(View):
 """****************************************************************************
     BIP-85 - Derive child mnemonic (seed) flow (Application number 39')
 ****************************************************************************"""
+def _bip85_change_redirect(view, child: Seed, parent: Seed = None):
+    """Reject stale index-change flows without holding a hidden parent secret."""
+    storage = view.controller.storage
+    if not any(loaded is child for loaded in storage.seeds):
+        return Destination(SeedsMenuView, clear_history=True)
+    if (not child.bip85_supported
+            or view.settings.get_value(SettingsConstants.SETTING__BIP85_CHILD_SEEDS) != SettingsConstants.OPTION__ENABLED):
+        return Destination(SeedOptionsView, view_args=dict(seed=child), clear_history=True)
+    missing_origin = not storage.has_complete_bip85_origin(child)
+    verified_parent = storage.get_bip85_parent(child)
+    if missing_origin or verified_parent is None or (parent is not None and verified_parent is not parent):
+        return Destination(SeedBIP85ParentUnavailableView,
+                           view_args=dict(seed=child, missing_origin=missing_origin), clear_history=True)
+    return None
+
+
+class SeedBIP85ChildMenuView(View):
+    CHANGE_INDEX = ButtonOption("Change child index")
+    DERIVE_CHILD = ButtonOption("Derive new child")
+
+    def __init__(self, seed: Seed):
+        super().__init__()
+        self.seed = seed
+        if not any(loaded is seed for loaded in self.controller.storage.seeds):
+            self.set_redirect(Destination(SeedsMenuView, clear_history=True))
+        elif (not seed.bip85_supported
+                or self.settings.get_value(SettingsConstants.SETTING__BIP85_CHILD_SEEDS) != SettingsConstants.OPTION__ENABLED):
+            self.set_redirect(Destination(SeedOptionsView, view_args=dict(seed=seed), clear_history=True))
+        elif not seed.is_bip85_child:
+            self.set_redirect(Destination(SeedBIP85SelectNumWordsView, view_args=dict(seed=seed)))
+
+    def run(self):
+        button_data = [self.CHANGE_INDEX, self.DERIVE_CHILD]
+        known_origin = self.controller.storage.has_complete_bip85_origin(self.seed)
+        selected = self.run_screen(
+            seed_screens.SeedBIP85ChildMenuScreen,
+            child_index=self.seed.bip85_child_index if known_origin else None,
+            num_words=self.seed.bip85_num_words if known_origin else None,
+            button_data=button_data,
+        )
+        if selected == RET_CODE__BACK_BUTTON:
+            return Destination(BackStackView)
+        if button_data[selected] == self.DERIVE_CHILD:
+            # This wallet, including its own passphrase, becomes the new parent.
+            return Destination(SeedBIP85SelectNumWordsView, view_args=dict(seed=self.seed))
+        unavailable = _bip85_change_redirect(self, self.seed)
+        if unavailable:
+            return unavailable
+        return Destination(SeedBIP85SelectChildIndexView, view_args=dict(
+            seed=self.controller.storage.get_bip85_parent(self.seed),
+            num_words=self.seed.bip85_num_words, change_from_seed=self.seed))
+
+
+class SeedBIP85ParentUnavailableView(View):
+    def __init__(self, seed: Seed, missing_origin: bool = False):
+        super().__init__()
+        self.seed = seed
+        self.missing_origin = missing_origin
+
+    def run(self):
+        self.run_screen(
+            WarningScreen,
+            title=_("Origin Unavailable") if self.missing_origin else _("Parent Needed"),
+            status_headline=None,
+            text=(_("Derive this child again from its original parent to change its index.")
+                  if self.missing_origin else
+                  _("Load the original parent with its original passphrase to change this child's index.")),
+            button_data=[ButtonOption("OK")], show_back_button=False,
+        )
+        return Destination(SeedOptionsView, view_args=dict(seed=self.seed), clear_history=True)
+
+
+class SeedBIP85DerivationView(View):
+    """Carry an optional sibling replacement through the ordinary backup flow."""
+    def __init__(self, seed: Seed, num_words: int, change_from_seed: Seed = None):
+        super().__init__()
+        self.seed = seed
+        self.num_words = num_words
+        self.change_from_seed = change_from_seed
+        if change_from_seed is not None:
+            unavailable = _bip85_change_redirect(self, change_from_seed, seed)
+            if unavailable:
+                self.set_redirect(unavailable)
+
+    def derivation_args(self, **kwargs):
+        args = dict(seed=self.seed, num_words=self.num_words, **kwargs)
+        if self.change_from_seed is not None:
+            args["change_from_seed"] = self.change_from_seed
+        return args
+
+
 class SeedBIP85SelectNumWordsView(View):
     WORDS_12 = ButtonOption("12 Words")
     WORDS_24 = ButtonOption("24 Words")
@@ -1366,48 +1482,78 @@ class SeedBIP85SelectNumWordsView(View):
 
 
 
-class SeedBIP85SelectChildIndexView(View):
+class SeedBIP85SelectChildIndexView(SeedBIP85DerivationView):
     # View to retrieve the derived seed index
-    def __init__(self, seed: Seed, num_words: int):
-        super().__init__()
-        self.seed = seed
-        self.num_words = num_words
-
-
     def run(self):
         # TODO: Change this later to use the generic Screen input keyboard
-        ret = self.run_screen(seed_screens.SeedBIP85SelectChildIndexScreen)
+        screen_args = (dict(initial_index=self.change_from_seed.bip85_child_index)
+                       if self.change_from_seed is not None else {})
+        ret = self.run_screen(seed_screens.SeedBIP85SelectChildIndexScreen, **screen_args)
 
         if ret == RET_CODE__BACK_BUTTON:
             return Destination(BackStackView)
 
-        if not 0 <= int(ret) < 2**31:
+        try:
+            child_index = int(ret)
+        except (ValueError, TypeError):
+            child_index = -1
+        if not 0 <= child_index < 2**31:
             return Destination(
                 SeedBIP85InvalidChildIndexView,
-                view_args=dict(
-                    seed=self.seed,
-                    num_words=self.num_words
-                ),
+                view_args=self.derivation_args(),
                 skip_current_view=True
             )
 
+        if self.change_from_seed is not None and child_index == self.change_from_seed.bip85_child_index:
+            # Keeping the same path must also keep the current child's passphrase.
+            return Destination(SeedOptionsView, view_args=dict(seed=self.change_from_seed), clear_history=True)
+
         return Destination(
-            SeedWordsWarningView,
-            view_args=dict(
-                seed=self.seed,
-                bip85_data=dict(child_index=int(ret), num_words=self.num_words),
-            )
+            SeedBIP85ReviewView,
+            view_args=self.derivation_args(child_index=child_index)
         )
 
 
 
-class SeedBIP85InvalidChildIndexView(View):
-    def __init__(self, seed: Seed, num_words: int):
-        super().__init__()
-        self.seed = seed
-        self.num_words = num_words
+class SeedBIP85ReviewView(SeedBIP85DerivationView):
+    VIEW_WORDS = ButtonOption("View seed words")
+
+    def __init__(self, seed: Seed, num_words: int, child_index: int, change_from_seed: Seed = None):
+        super().__init__(seed, num_words, change_from_seed)
+        self.child_index = child_index
 
 
+    def run(self):
+        network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+        child = Seed(self.seed.get_bip85_child_mnemonic(self.child_index, self.num_words).split())
+        selected_menu_num = self.run_screen(
+            seed_screens.SeedBIP85ReviewScreen,
+            # The deriving parent includes its current passphrase. The new child
+            # identity is the derived mnemonic with no passphrase of its own.
+            fingerprint_parent=self.seed.get_fingerprint(network),
+            fingerprint_child=child.get_fingerprint(network),
+            child_index=self.child_index,
+            num_words=self.num_words,
+            button_data=[self.VIEW_WORDS],
+        )
+
+        if selected_menu_num == RET_CODE__BACK_BUTTON:
+            return Destination(BackStackView)
+
+        bip85_data = dict(child_index=self.child_index, num_words=self.num_words)
+        if self.change_from_seed is not None:
+            bip85_data["change_from_seed"] = self.change_from_seed
+        return Destination(
+            SeedWordsWarningView,
+            view_args=dict(
+                seed=self.seed,
+                bip85_data=bip85_data,
+            ),
+        )
+
+
+
+class SeedBIP85InvalidChildIndexView(SeedBIP85DerivationView):
     def run(self):
         self.run_screen(
             DireWarningScreen,
@@ -1421,12 +1567,83 @@ class SeedBIP85InvalidChildIndexView(View):
 
         return Destination(
                 SeedBIP85SelectChildIndexView,
-                view_args=dict(
-                    seed=self.seed, 
-                    num_words=self.num_words
-                ),
+                view_args=self.derivation_args(),
                 skip_current_view=True
             )
+
+
+
+class SeedBIP85LoadChildView(SeedBIP85DerivationView):
+    def __init__(self, seed: Seed, num_words: int, child_index: int, change_from_seed: Seed = None):
+        super().__init__(seed, num_words, change_from_seed)
+        self.child_index = child_index
+
+
+    def run(self):
+        # The parent's passphrase participates in derivation, but is not inherited
+        # by the child. Subsequent menu actions must target this independent Seed.
+        child = Seed(self.seed.get_bip85_child_mnemonic(self.child_index, self.num_words).split(),
+                     is_bip85_child=True,
+                     bip85_parent_fingerprint=self.seed.get_fingerprint(
+                         self.settings.get_value(SettingsConstants.SETTING__NETWORK)),
+                     bip85_child_index=self.child_index, bip85_num_words=self.num_words)
+        if self.change_from_seed is not None:
+            # The original child stays loaded until the final explicit choice.
+            # Skip this screenless transition so Back returns to the backup page.
+            return Destination(SeedBIP85SaveChildView,
+                               view_args=dict(seed=self.change_from_seed, parent=self.seed, candidate=child),
+                               skip_current_view=True)
+        child = self.controller.load_seed(child)
+        return Destination(SeedOptionsView, view_args=dict(seed=child), clear_history=True)
+
+
+class SeedBIP85SaveChildView(View):
+    REPLACE = ButtonOption("Replace current")
+    LOAD_SEPARATELY = ButtonOption("Load separately")
+    CANCEL = ButtonOption("Cancel")
+
+    def __init__(self, seed: Seed, parent: Seed, candidate: Seed):
+        super().__init__()
+        self.seed = seed
+        self.parent = parent
+        self.candidate = candidate
+        unavailable = self.validate_change()
+        if unavailable:
+            self.set_redirect(unavailable)
+
+    def validate_change(self):
+        unavailable = _bip85_change_redirect(self, self.seed, self.parent)
+        if unavailable:
+            return unavailable
+        # Check the exact candidate too: a fingerprint is a visual cue, not proof
+        # of its derivation. A sibling starts without a passphrase of its own.
+        if (self.candidate.has_passphrase
+                or self.candidate.bip85_num_words != self.seed.bip85_num_words
+                or self.controller.storage.get_bip85_parent(self.candidate) is not self.parent):
+            return Destination(SeedBIP85ChildMenuView, view_args=dict(seed=self.seed), clear_history=True)
+        return None
+
+    def run(self):
+        button_data = [self.REPLACE, self.LOAD_SEPARATELY, self.CANCEL]
+        network = self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+        selected = self.run_screen(
+            seed_screens.SeedBIP85SaveChildScreen,
+            fingerprint_parent=self.parent.get_fingerprint(network),
+            fingerprint_new=self.candidate.get_fingerprint(network),
+            button_data=button_data, selected_button=0,
+        )
+        if selected == RET_CODE__BACK_BUTTON:
+            return Destination(BackStackView)
+        if button_data[selected] == self.CANCEL:
+            return Destination(SeedOptionsView, view_args=dict(seed=self.seed), clear_history=True)
+        unavailable = self.validate_change()
+        if unavailable:
+            return unavailable
+        if button_data[selected] == self.LOAD_SEPARATELY:
+            child = self.controller.load_seed(self.candidate)
+        else:
+            child = self.controller.replace_seed(self.seed, self.candidate)
+        return Destination(SeedOptionsView, view_args=dict(seed=child), clear_history=True)
 
 
 
@@ -1436,6 +1653,8 @@ class SeedBIP85InvalidChildIndexView(View):
 class SeedWordsBackupTestPromptView(View):
     VERIFY = ButtonOption("Verify")
     SKIP = ButtonOption("Skip")
+    VERIFY_CHILD = ButtonOption("Verify & load")
+    LOAD_CHILD = ButtonOption("Load child")
 
     def __init__(self, seed: Seed, bip85_data: dict = None):
         super().__init__()
@@ -1444,20 +1663,25 @@ class SeedWordsBackupTestPromptView(View):
 
 
     def run(self):
-        button_data = [self.VERIFY, self.SKIP]
+        button_data = ([self.VERIFY_CHILD, self.LOAD_CHILD] if self.bip85_data is not None
+                       else [self.VERIFY, self.SKIP])
         selected_menu_num = self.run_screen(
             seed_screens.SeedWordsBackupTestPromptScreen,
             button_data=button_data,
+            is_bip85_child=self.bip85_data is not None,
         )
 
-        if button_data[selected_menu_num] == self.VERIFY:
+        if button_data[selected_menu_num] in [self.VERIFY, self.VERIFY_CHILD]:
             return Destination(
                 SeedWordsBackupTestView,
                 view_args=dict(seed=self.seed, bip85_data=self.bip85_data),
             )
 
-        elif button_data[selected_menu_num] == self.SKIP:
-            if self.seed is None:
+        elif button_data[selected_menu_num] in [self.SKIP, self.LOAD_CHILD]:
+            if self.bip85_data is not None:
+                return Destination(SeedBIP85LoadChildView,
+                                   view_args=dict(seed=self.seed, **self.bip85_data))
+            elif self.seed is None:
                 return Destination(SeedFinalizeView)
             else:
                 return Destination(SeedOptionsView, view_args=dict(seed=self.seed))
@@ -1531,7 +1755,7 @@ class SeedWordsBackupTestView(View):
                 # Successfully confirmed the full mnemonic!
                 return Destination(
                     SeedWordsBackupTestSuccessView,
-                    view_args=dict(seed=self.seed),
+                    view_args=dict(seed=self.seed, bip85_data=self.bip85_data),
                 )
             else:
                 # Continue testing the remaining words
@@ -1607,9 +1831,10 @@ class SeedWordsBackupTestMistakeView(View):
 
 
 class SeedWordsBackupTestSuccessView(View):
-    def __init__(self, seed: Seed):
+    def __init__(self, seed: Seed, bip85_data: dict = None):
         super().__init__()
         self.seed = seed
+        self.bip85_data = bip85_data
 
     def run(self):
         from seedsigner.gui.screens.screen import LargeIconStatusScreen
@@ -1619,10 +1844,13 @@ class SeedWordsBackupTestSuccessView(View):
             show_back_button=False,
             status_headline=_("Success!"),
             text=_("All mnemonic backup words were successfully verified!"),
-            button_data=[ButtonOption("OK")]
+            button_data=[ButtonOption("Load child") if self.bip85_data is not None else ButtonOption("OK")]
         )
 
-        if self.seed is None:
+        if self.bip85_data is not None:
+            return Destination(SeedBIP85LoadChildView,
+                               view_args=dict(seed=self.seed, **self.bip85_data))
+        elif self.seed is None:
             return Destination(SeedFinalizeView)
         else:
             return Destination(SeedOptionsView, view_args=dict(seed=self.seed), clear_history=True)

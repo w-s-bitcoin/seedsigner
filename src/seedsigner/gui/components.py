@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 from gettext import gettext as _
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from typing import Any, List, Tuple
 
 from seedsigner.gui.renderer import Renderer
@@ -107,7 +107,7 @@ class GUIConstants:
         SettingsConstants.LOCALE__CHINESE_SIMPLIFIED: 20,
     }
     BUTTON_FONT_COLOR = "#FCFCFC"
-    BUTTON_BACKGROUND_COLOR = "#2C2C2C"
+    BUTTON_BACKGROUND_COLOR = "#181818"
     BUTTON_HEIGHT = 32
     BUTTON_SELECTED_FONT_COLOR = BACKGROUND_COLOR
     
@@ -819,7 +819,13 @@ class LifeHashIcon(BaseComponent):
         self.width = self.height = self.size
 
     def render(self):
-        self.canvas.paste(self.image, (self.screen_x, self.screen_y))
+        # The controller's INVON bit is panel polarity, not necessarily a visual
+        # inversion. Ask the driver about the resulting colors. Read on every
+        # render so live setting changes also affect existing components.
+        image = self.image
+        if getattr(self.renderer.disp, "colors_inverted", False) is True:
+            image = ImageOps.invert(image)
+        self.canvas.paste(image, (self.screen_x, self.screen_y))
 
 
 @dataclass
@@ -956,7 +962,7 @@ class IconTextLine(BaseComponent):
 
 @dataclass
 class FingerprintArrow(BaseComponent):
-    """An eight-pixel arrow with ten pixels of space on either side."""
+    """A twelve-pixel arrow with eight pixels of space on either side."""
     WIDTH = 28
     screen_x: int = 0
     screen_y: int = 0
@@ -964,22 +970,22 @@ class FingerprintArrow(BaseComponent):
     background_color: str = None
 
     def render(self):
-        x = self.screen_x + 10
+        x = self.screen_x + 8
         y = self.screen_y + 10
         if self.background_color:
             self.image_draw.rounded_rectangle(
-                (x - 2, y - 5, x + 9, y + 5), radius=2, fill=self.background_color,
+                (x - 2, y - 5, x + 13, y + 5), radius=2, fill=self.background_color,
             )
-        self.image_draw.line((x, y, x + 7, y), fill=self.color)
+        self.image_draw.line((x, y, x + 11, y), fill=self.color)
         self.image_draw.line(
-            [(x + 4, y - 3), (x + 7, y), (x + 4, y + 3)],
+            [(x + 8, y - 3), (x + 11, y), (x + 8, y + 3)],
             fill=self.color,
         )
 
 
 @dataclass
 class LifeHashSequence(BaseComponent):
-    """A compact lineage of 20px LifeHashes connected by the shared arrows."""
+    """At most two 20px LifeHashes showing the final relationship in a lineage."""
     fingerprints: Tuple[str, ...] = None
     arrow_color: str = GUIConstants.BODY_FONT_COLOR
     arrow_colors: Tuple[str, ...] = None
@@ -993,6 +999,10 @@ class LifeHashSequence(BaseComponent):
             raise ValueError("A LifeHash sequence requires at least one fingerprint")
         if self.arrow_colors is not None and len(self.arrow_colors) != len(self.fingerprints) - 1:
             raise ValueError("A LifeHash sequence requires one color per arrow")
+        # Keep the immediate source and destination, with their connecting color.
+        self.fingerprints = self.fingerprints[-2:]
+        if self.arrow_colors is not None:
+            self.arrow_colors = self.arrow_colors[-1:]
         self.height = 20
         self.width = len(self.fingerprints) * 20 + (len(self.fingerprints) - 1) * FingerprintArrow.WIDTH
         self.components = []
@@ -1072,9 +1082,7 @@ class FingerprintHeader(BaseComponent):
         self.height = 20
         self.width = self.width if self.width is not None else self.canvas_width - self.screen_x
         if self.fingerprints:
-            # A parent's derivation and the child's passphrase need three tiles.
-            # Use a smaller full XFP so the chain still fits beside Back at 240px.
-            self.font_size = 16 if len(self.fingerprints) > 2 else 20
+            self.font_size = 20
             font = Fonts.get_font(GUIConstants.FIXED_WIDTH_FONT_NAME, self.font_size)
             text_width = math.ceil(font.getlength(self.fingerprint))
             sequence = LifeHashSequence(

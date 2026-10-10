@@ -60,7 +60,7 @@ it is actually implemented to be run by `pytest`.
 
 see: [Screenshot generator README](screenshot_generator/README.md)
 
-## Interactive passphrase and LifeHash preview
+## Interactive passphrase, LifeHash and BIP-85 preview
 
 After installing the dependencies above, compile the translation catalogs and run:
 
@@ -97,10 +97,52 @@ then choose how to load** demo starts at this review. The generated gallery also
 shows the choice and the two wallet entries after loading separately. Removing a
 passphrase retains its direct removal confirmation.
 
-The seed menu marks an active passphrase in the same yellow as its confirmation
-text and relationship arrow. Selected arrows and checks retain their color on
-small black backgrounds. In-Memory Seeds shows the wallet without a passphrase
-and the current wallet as 20px LifeHashes, followed by the current fingerprint.
+The BIP-85 demo scenarios start child derivation from the public seed, with or
+without its demo passphrase. Select 12 or 24 words and a child index to review the
+parent and child identities. Child-word pages keep the parent-to-child LifeHash
+header, child fingerprint and index/page label visible while showing three words
+at a time. After the words, choose **Verify & load** or **Load child**. The child
+loads as a separate wallet while its parent stays in memory. Passphrase changes
+from the child's menu apply to that child's mnemonic, using its own fingerprint
+without a passphrase as the review baseline. The **Loaded BIP-85 child (parent
+retained)** scenario starts at this child menu. BIP-85 is enabled only in the
+preview's temporary settings, and its setting can be changed through the menus.
+For a loaded child, **BIP-85 child seed** opens **Change child index** and
+**Derive new child**. Changing the index uses the original parent and word count,
+prefills the current index, and offers **Replace current** or **Load separately**
+after reviewing and backing up the sibling. Deriving a new child uses the selected
+child itself as the parent.
+Use **Change child index (parent retained)** to exercise sibling replacement or
+separate loading, **Derive from a loaded child** for grandchild derivation, and
+**Change index with parent unloaded** for the parent-needed notice. The gallery
+also covers prefilled index entry, sibling review/loading, grandchild loading,
+and notices for missing parent or origin details.
+The seed menu marks a known BIP-85 child in blue and an active passphrase in the
+same color as the passphrase text in its confirmation screen. Arrows and checks
+share these colors. Selected arrows and checks use small black backgrounds so
+their colors remain visible on the selected row. Both checks appear for a child
+with a passphrase.
+
+The **In-Memory Seeds: wallet relationships** scenario shows a plain seed, a
+passphrased seed, a BIP-85 child and a passphrased child together. Rows and loaded
+seed-menu headers show at most two 20px LifeHashes, plus only the current wallet's
+full fingerprint in 20px type. With a passphrase, the pair is the selected seed's
+wallet without a passphrase → current wallet, connected by a yellow arrow. This
+applies to a BIP-85 child's own passphrase as well. Otherwise, a known child shows
+its actual deriving parent → child with a blue arrow. A plain seed or child
+without a known parent snapshot shows only its current LifeHash.
+
+The parent fingerprint remains stored when the child's passphrase relationship
+is displayed; no parent secret is kept inside the child. Removing the child's
+passphrase restores the saved parent → child display. Equal fingerprints still
+show both roles in the pair. The passphrased-parent demo scenarios exercise these
+headers using the actual child-loading operation. When deriving a grandchild,
+review and child-word pages show its immediate parent's actual wallet, including
+that parent's passphrase, → new child.
+
+The two-LifeHash presentation passed all 584 non-screenshot tests, and the
+preview generated 50 native gallery PNGs. Earlier all-locale screenshot results
+in `docs/lifehash.md` refer to the previous layout.
 
 On a device, **Settings → Advanced → BIP-39 passphrase** controls passphrase
 support. **Enabled** or **Required** exposes **BIP-39 Passphrase** near the bottom

@@ -22,8 +22,17 @@ class Seed:
     def __init__(self,
                  mnemonic: List[str] = None,
                  passphrase: str = "",
-                 wordlist_language_code: str = SettingsConstants.WORDLIST_LANGUAGE__ENGLISH) -> None:
+                 wordlist_language_code: str = SettingsConstants.WORDLIST_LANGUAGE__ENGLISH,
+                 is_bip85_child: bool = False,
+                 bip85_parent_fingerprint: str = None,
+                 bip85_child_index: int = None,
+                 bip85_num_words: int = None) -> None:
         self._wordlist_language_code = wordlist_language_code
+        # Session metadata only; keep no reference to the deriving parent.
+        self.is_bip85_child = is_bip85_child or bip85_parent_fingerprint is not None
+        self.bip85_parent_fingerprint = bip85_parent_fingerprint
+        self.bip85_child_index = bip85_child_index
+        self.bip85_num_words = bip85_num_words
 
         if not mnemonic:
             raise Exception("Must initialize a Seed with a mnemonic List[str]")
