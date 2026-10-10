@@ -124,6 +124,11 @@ does not change the child's recorded origin. If no parent fingerprint is
 known, a child without its own passphrase shows only its current LifeHash.
 Choosing any row opens its current wallet.
 
+Back from a loaded seed's menu returns to **In-Memory Seeds**, including when
+only one seed is loaded. Back from that list returns to the main menu. Leaving
+a wallet clears its workflow state and history while preserving loaded seeds
+and unrelated pending seed entry.
+
 Discarding a loaded seed returns to **In-Memory Seeds** with that entry removed.
 If no loaded seeds remain, it returns to the main menu. This applies equally to
 ordinary seeds, passphrased wallets, and BIP-85 children. Discard clears prior

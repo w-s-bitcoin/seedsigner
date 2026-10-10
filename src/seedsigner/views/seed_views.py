@@ -826,8 +826,10 @@ class SeedOptionsView(View):
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
-            # Force BACK to always return to the Main Menu
-            return Destination(MainMenuView)
+            # Leaving a wallet still clears its workflow state, even when we
+            # return to the seed list instead of passing through Home.
+            self.controller.clear_wallet_state()
+            return Destination(SeedsMenuView, clear_history=True)
 
         if button_data[selected_menu_num] == self.SCAN_PSBT:
             from seedsigner.views.scan_views import ScanPSBTView

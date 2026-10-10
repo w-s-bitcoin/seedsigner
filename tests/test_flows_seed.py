@@ -825,3 +825,69 @@ class TestMessageSigningFlows(FlowTest):
         expect_unsupported_derivation(self.load_custom_derivation_into_decoder)
 
 
+
+
+class TestLoadedSeedBackNavigation(FlowTest):
+    @pytest.mark.parametrize("passphrase,is_child", [
+        ("", False), ("test extension", False),
+        ("", True), ("test extension", True),
+    ], ids=["regular", "passphrased", "child", "passphrased_child"])
+    @pytest.mark.parametrize("multiple", [False, True], ids=["single_seed", "multiple_seeds"])
+    @pytest.mark.parametrize("from_list", [False, True], ids=["after_load", "from_list"])
+    def test_back_returns_to_seeds_then_home_without_retaining_wallet_state(
+            self, passphrase, is_child, multiple, from_list):
+        mnemonic = ["abandon"] * 11 + ["about"]
+        parent = Seed(mnemonic, "parent")
+        selected = Seed(
+            parent.get_bip85_child_mnemonic(0, 12).split() if is_child else mnemonic,
+            passphrase,
+            bip85_parent_fingerprint=parent.get_fingerprint() if is_child else None,
+        )
+        originals = [selected, parent] if multiple else [selected]
+        original_bytes = [seed.seed_bytes for seed in originals]
+        self.controller.storage.seeds = list(originals)
+        pending = Seed(mnemonic, "unrelated pending entry")
+        self.controller.storage.set_pending_seed(pending)
+        wallet_state = (
+            "psbt", "psbt_parser", "psbt_seed", "resume_main_flow",
+            "multisig_wallet_descriptor", "unverified_address",
+            "address_explorer_data", "sign_message_data",
+        )
+
+        def leave_selected_wallet(view):
+            assert view.seed is selected
+            run_screen = view.run_screen
+
+            def inject_state_after_resume_checks(*args, **kwargs):
+                for field in wallet_state:
+                    setattr(self.controller, field, selected if field == "psbt_seed" else object())
+                return run_screen(*args, **kwargs)
+
+            view.run_screen = inject_state_after_resume_checks
+
+        def inspect_seed_list(view):
+            assert all(getattr(self.controller, field) is None for field in wallet_state)
+            assert len(self.controller.back_stack) == 1
+            assert self.controller.back_stack[0].View_cls is seed_views.SeedsMenuView
+            assert len(view.seeds) == len(originals)
+            assert len(self.controller.storage.seeds) == len(originals)
+            assert all(current is original for current, original in zip(self.controller.storage.seeds, originals))
+            assert all(seed.seed_bytes is original for seed, original in zip(originals, original_bytes))
+            assert self.controller.storage.get_pending_seed() is pending
+
+        def inspect_reselected_wallet(view):
+            assert view.seed is originals[-1]
+
+        sequence = ([FlowStep(seed_views.SeedsMenuView, screen_return_value=0)] if from_list else []) + [
+            FlowStep(seed_views.SeedOptionsView, before_run=leave_selected_wallet,
+                     screen_return_value=RET_CODE__BACK_BUTTON),
+            FlowStep(seed_views.SeedsMenuView, before_run=inspect_seed_list,
+                     screen_return_value=len(originals) - 1),
+            FlowStep(seed_views.SeedOptionsView, before_run=inspect_reselected_wallet,
+                     screen_return_value=RET_CODE__BACK_BUTTON),
+            FlowStep(seed_views.SeedsMenuView, before_run=inspect_seed_list,
+                     screen_return_value=RET_CODE__BACK_BUTTON),
+            FlowStep(MainMenuView),
+        ]
+        self.run_sequence(sequence, initial_destination_view_args=None if from_list else {"seed": selected})
+        assert not self.controller.back_stack
