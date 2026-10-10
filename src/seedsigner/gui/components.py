@@ -962,7 +962,7 @@ class IconTextLine(BaseComponent):
 
 @dataclass
 class FingerprintArrow(BaseComponent):
-    """An eight-pixel arrow with ten pixels of space on either side."""
+    """A twelve-pixel arrow with eight pixels of space on either side."""
     WIDTH = 28
     screen_x: int = 0
     screen_y: int = 0
@@ -970,15 +970,15 @@ class FingerprintArrow(BaseComponent):
     background_color: str = None
 
     def render(self):
-        x = self.screen_x + 10
+        x = self.screen_x + 8
         y = self.screen_y + 10
         if self.background_color:
             self.image_draw.rounded_rectangle(
-                (x - 2, y - 5, x + 9, y + 5), radius=2, fill=self.background_color,
+                (x - 2, y - 5, x + 13, y + 5), radius=2, fill=self.background_color,
             )
-        self.image_draw.line((x, y, x + 7, y), fill=self.color)
+        self.image_draw.line((x, y, x + 11, y), fill=self.color)
         self.image_draw.line(
-            [(x + 4, y - 3), (x + 7, y), (x + 4, y + 3)],
+            [(x + 8, y - 3), (x + 11, y), (x + 8, y + 3)],
             fill=self.color,
         )
 

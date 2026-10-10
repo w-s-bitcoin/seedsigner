@@ -48,6 +48,11 @@ report for firmware `5955b14` predates this change.
 
 ### Wallet relationships
 
+Relationship arrows use a 12px stem with 8px margins on each side inside the
+existing 28px slot. This lengthens the yellow passphrase and blue BIP-85 arrows
+without moving the LifeHashes or fingerprint text. Selected-row backings grow
+to preserve padding around the longer arrow.
+
 Passphrase review places two identities horizontally with a right-pointing
 arrow: first the mnemonic's wallet **without a passphrase**, then the candidate
 wallet. Each identity has a 20px LifeHash beside its 16px hexadecimal fingerprint.
