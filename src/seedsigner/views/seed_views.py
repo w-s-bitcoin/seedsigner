@@ -35,14 +35,15 @@ class SeedsMenuView(View):
             fingerprints = []
             arrow_colors = []
             selected_arrow_colors = []
-            if seed.bip85_parent_fingerprint is not None:
-                fingerprints.append(seed.bip85_parent_fingerprint)
-                arrow_colors.append(GUIConstants.BIP85_COLOR)
-                selected_arrow_colors.append(GUIConstants.BIP85_COLOR_SELECTED)
+            # Display only the immediate relationship, even for a passphrased child.
             if seed.has_passphrase:
                 fingerprints.append(seed.get_fingerprint_without_passphrase(network))
                 arrow_colors.append(GUIConstants.PASSPHRASE_COLOR)
                 selected_arrow_colors.append(GUIConstants.PASSPHRASE_COLOR_SELECTED)
+            elif seed.bip85_parent_fingerprint is not None:
+                fingerprints.append(seed.bip85_parent_fingerprint)
+                arrow_colors.append(GUIConstants.BIP85_COLOR)
+                selected_arrow_colors.append(GUIConstants.BIP85_COLOR_SELECTED)
             fingerprints.append(fingerprint)
             self.seeds.append({
                 "fingerprint": fingerprint,

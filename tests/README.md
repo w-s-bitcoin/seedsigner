@@ -124,17 +124,25 @@ their colors remain visible on the selected row. Both checks appear for a child
 with a passphrase.
 
 The **In-Memory Seeds: wallet relationships** scenario shows a plain seed, a
-passphrased seed, a BIP-85 child and a passphrased child together. Their rows use
-20px LifeHashes connected by arrows and show only the final wallet's full
-fingerprint. A passphrased child shows its deriving parent, the child without a
-passphrase and the current wallet. The parent fingerprint is retained as display
-metadata; no parent secret is kept inside the child.
+passphrased seed, a BIP-85 child and a passphrased child together. Rows and loaded
+seed-menu headers show at most two 20px LifeHashes, plus only the current wallet's
+full fingerprint in 20px type. With a passphrase, the pair is the selected seed's
+wallet without a passphrase → current wallet, connected by a yellow arrow. This
+applies to a BIP-85 child's own passphrase as well. Otherwise, a known child shows
+its actual deriving parent → child with a blue arrow. A plain seed or child
+without a known parent snapshot shows only its current LifeHash.
 
-A loaded child's seed-menu header retains its actual deriving-parent LifeHash,
-connected to the child by a blue arrow. With its own passphrase, the child header
-adds a yellow arrow and a third LifeHash; the final fingerprint uses 16px type so
-the entire chain fits beside Back. The two additional passphrased-parent demo
-scenarios exercise these headers using the actual child-loading operation.
+The parent fingerprint remains stored when the child's passphrase relationship
+is displayed; no parent secret is kept inside the child. Removing the child's
+passphrase restores the saved parent → child display. Equal fingerprints still
+show both roles in the pair. The passphrased-parent demo scenarios exercise these
+headers using the actual child-loading operation. When deriving a grandchild,
+review and child-word pages show its immediate parent's actual wallet, including
+that parent's passphrase, → new child.
+
+The two-LifeHash presentation passed all 584 non-screenshot tests, and the
+preview generated 50 native gallery PNGs. Earlier all-locale screenshot results
+in `docs/lifehash.md` refer to the previous layout.
 
 On a device, **Settings → Advanced → BIP-39 passphrase** controls passphrase
 support. **Enabled** or **Required** exposes **BIP-39 Passphrase** near the bottom

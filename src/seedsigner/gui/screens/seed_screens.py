@@ -453,13 +453,9 @@ class SeedOptionsScreen(ButtonListScreen):
         self.top_nav_lifehash_fingerprint = self.fingerprint
         self.top_nav_lifehash_fingerprint_source = self.fingerprint_without
         self.top_nav_lifehash_arrow_color = GUIConstants.PASSPHRASE_COLOR
-        if self.fingerprint_parent:
-            self.top_nav_lifehash_fingerprints = (self.fingerprint_parent,)
-            self.top_nav_lifehash_arrow_colors = (GUIConstants.BIP85_COLOR,)
-            if self.fingerprint_without:
-                self.top_nav_lifehash_fingerprints += (self.fingerprint_without,)
-                self.top_nav_lifehash_arrow_colors += (GUIConstants.PASSPHRASE_COLOR,)
-            self.top_nav_lifehash_fingerprints += (self.fingerprint,)
+        if self.fingerprint_parent and not self.fingerprint_without:
+            self.top_nav_lifehash_fingerprint_source = self.fingerprint_parent
+            self.top_nav_lifehash_arrow_color = GUIConstants.BIP85_COLOR
         self.top_nav_icon_name = SeedSignerIconConstants.FINGERPRINT
         self.top_nav_icon_color = GUIConstants.INFO_COLOR
         self.title = self.fingerprint

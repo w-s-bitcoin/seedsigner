@@ -241,9 +241,10 @@ class TestSeedOptionsHeader(BaseTest):
         ("b4e3f5ed", None, "47c88c48"),
         ("b4e3f5ed", "47c88c48", "0d777ffb"),
         (None, None, "47c88c48"),
+        (None, "47c88c48", "0d777ffb"),
         ("deadbeef", "deadbeef", "deadbeef"),
     ])
-    def test_native_child_header_renders_every_role_without_overlapping_back_or_xfp(
+    def test_native_child_header_limits_relationship_to_two_without_overlapping_back_or_xfp(
             self, parent, without, current, monkeypatch):
         from unittest.mock import MagicMock
 
@@ -279,8 +280,11 @@ class TestSeedOptionsHeader(BaseTest):
                     visit(child[1] if isinstance(child, tuple) else child)
 
         visit(screen.top_nav.title)
-        expected_fingerprints = ([parent] if parent else []) + ([without] if without else []) + [current]
-        expected_colors = ([GUIConstants.BIP85_COLOR] if parent else []) + ([GUIConstants.PASSPHRASE_COLOR] if without else [])
+        source = without or parent
+        expected_fingerprints = ([source] if source else []) + [current]
+        expected_colors = ([GUIConstants.PASSPHRASE_COLOR if without else GUIConstants.BIP85_COLOR]
+                           if source else [])
+        assert len(icons) <= 2
         assert [icon.fingerprint for icon in icons] == expected_fingerprints
         assert [arrow.color for arrow in arrows] == expected_colors
         assert [label.text for label in labels] == [current]
@@ -294,6 +298,41 @@ class TestSeedOptionsHeader(BaseTest):
         for arrow in arrows:
             assert renderer.canvas.getpixel((arrow.screen_x + 10, arrow.screen_y + 10)) == ImageColor.getrgb(arrow.color)
         label = labels[0]
+        assert label.font_size == 20
         assert icons[-1].screen_x + icons[-1].width < label.screen_x
         assert label.screen_x + label.text_width <= right_edge
         assert screen.top_nav.title.content_width <= screen.top_nav.title.width
+
+
+class TestLifeHashLineageLimit(BaseTest):
+    @pytest.mark.parametrize("fingerprints", [
+        ("b4e3f5ed", "47c88c48", "0d777ffb"),
+        ("73c5da0a", "b4e3f5ed", "47c88c48", "0d777ffb"),
+        ("deadbeef", "deadbeef", "deadbeef"),
+    ])
+    def test_longer_lineage_keeps_last_two_roles_and_their_arrow(self, fingerprints, monkeypatch):
+        from PIL import Image, ImageDraw
+        from seedsigner.gui.components import (FingerprintArrow, FingerprintHeader,
+                                               GUIConstants, LifeHashIcon, LifeHashSequence)
+
+        from unittest.mock import MagicMock
+        from seedsigner.gui.renderer import Renderer
+
+        canvas = Image.new("RGB", (240, 240), GUIConstants.BACKGROUND_COLOR)
+        renderer = MagicMock(canvas_width=240, canvas_height=240, canvas=canvas)
+        monkeypatch.setattr(Renderer, "get_instance", lambda: renderer)
+        colors = (GUIConstants.BIP85_COLOR,) * (len(fingerprints) - 2) + (GUIConstants.PASSPHRASE_COLOR,)
+        header = FingerprintHeader(
+            canvas=canvas, image_draw=ImageDraw.Draw(canvas), width=184, screen_x=48,
+            fingerprint=fingerprints[-1], fingerprints=fingerprints, arrow_colors=colors,
+        )
+        header.render()
+        sequence = header.components[0]
+        assert isinstance(sequence, LifeHashSequence)
+        icons = [component for _, component in sequence.components if isinstance(component, LifeHashIcon)]
+        arrows = [component for _, component in sequence.components if isinstance(component, FingerprintArrow)]
+        assert [icon.fingerprint for icon in icons] == list(fingerprints[-2:])
+        assert [arrow.color for arrow in arrows] == [GUIConstants.PASSPHRASE_COLOR]
+        assert header.components[-1].text == fingerprints[-1]
+        assert header.components[-1].font_size == 20
+        assert header.content_width <= header.width

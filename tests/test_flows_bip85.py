@@ -547,21 +547,21 @@ class TestBIP85Flows(FlowTest):
             (plain.get_fingerprint(),),
             (plain.get_fingerprint(), parent.get_fingerprint()),
             (parent.get_fingerprint(), child.get_fingerprint()),
-            (parent.get_fingerprint(), child.get_fingerprint(), extended_child.get_fingerprint()),
+            (child.get_fingerprint(), extended_child.get_fingerprint()),
             (unknown_parent_child.get_fingerprint(),),
         ]
         expected_edge_colors = [
             (),
             (GUIConstants.PASSPHRASE_COLOR,),
             (GUIConstants.BIP85_COLOR,),
-            (GUIConstants.BIP85_COLOR, GUIConstants.PASSPHRASE_COLOR),
+            (GUIConstants.PASSPHRASE_COLOR,),
             (),
         ]
         expected_selected_edge_colors = [
             (),
             (GUIConstants.PASSPHRASE_COLOR_SELECTED,),
             (GUIConstants.BIP85_COLOR_SELECTED,),
-            (GUIConstants.BIP85_COLOR_SELECTED, GUIConstants.PASSPHRASE_COLOR_SELECTED),
+            (GUIConstants.PASSPHRASE_COLOR_SELECTED,),
             (),
         ]
 
@@ -636,7 +636,7 @@ class TestBIP85Flows(FlowTest):
         assert self.controller.back_stack[-1].view_args["seed"] is child
 
 
-    def test_in_memory_relationship_keeps_each_role_when_fingerprints_collide(self, monkeypatch):
+    def test_in_memory_relationship_keeps_two_roles_when_fingerprints_collide(self, monkeypatch):
         child = Seed(CHILDREN[0][3].split(), "child extension", bip85_parent_fingerprint="deadbeef")
         self.controller.storage.seeds = [child]
         monkeypatch.setattr(Seed, "get_fingerprint", lambda self, *args, **kwargs: "deadbeef")
@@ -646,11 +646,10 @@ class TestBIP85Flows(FlowTest):
 
             def inspect_screen(*args, **kwargs):
                 row = kwargs["button_data"][0]
-                assert row.lifehash_fingerprints == ("deadbeef", "deadbeef", "deadbeef")
+                assert row.lifehash_fingerprints == ("deadbeef", "deadbeef")
                 assert row.button_label == "deadbeef"
-                assert row.lifehash_arrow_colors == (GUIConstants.BIP85_COLOR, GUIConstants.PASSPHRASE_COLOR)
-                assert row.selected_lifehash_arrow_colors == (
-                    GUIConstants.BIP85_COLOR_SELECTED, GUIConstants.PASSPHRASE_COLOR_SELECTED)
+                assert row.lifehash_arrow_colors == (GUIConstants.PASSPHRASE_COLOR,)
+                assert row.selected_lifehash_arrow_colors == (GUIConstants.PASSPHRASE_COLOR_SELECTED,)
                 return run_screen(*args, **kwargs)
 
             view.run_screen = inspect_screen

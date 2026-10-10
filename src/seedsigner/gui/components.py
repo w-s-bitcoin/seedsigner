@@ -979,7 +979,7 @@ class FingerprintArrow(BaseComponent):
 
 @dataclass
 class LifeHashSequence(BaseComponent):
-    """A compact lineage of 20px LifeHashes connected by the shared arrows."""
+    """At most two 20px LifeHashes showing the final relationship in a lineage."""
     fingerprints: Tuple[str, ...] = None
     arrow_color: str = GUIConstants.BODY_FONT_COLOR
     arrow_colors: Tuple[str, ...] = None
@@ -993,6 +993,10 @@ class LifeHashSequence(BaseComponent):
             raise ValueError("A LifeHash sequence requires at least one fingerprint")
         if self.arrow_colors is not None and len(self.arrow_colors) != len(self.fingerprints) - 1:
             raise ValueError("A LifeHash sequence requires one color per arrow")
+        # Keep the immediate source and destination, with their connecting color.
+        self.fingerprints = self.fingerprints[-2:]
+        if self.arrow_colors is not None:
+            self.arrow_colors = self.arrow_colors[-1:]
         self.height = 20
         self.width = len(self.fingerprints) * 20 + (len(self.fingerprints) - 1) * FingerprintArrow.WIDTH
         self.components = []
@@ -1072,9 +1076,7 @@ class FingerprintHeader(BaseComponent):
         self.height = 20
         self.width = self.width if self.width is not None else self.canvas_width - self.screen_x
         if self.fingerprints:
-            # A parent's derivation and the child's passphrase need three tiles.
-            # Use a smaller full XFP so the chain still fits beside Back at 240px.
-            self.font_size = 16 if len(self.fingerprints) > 2 else 20
+            self.font_size = 20
             font = Fonts.get_font(GUIConstants.FIXED_WIDTH_FONT_NAME, self.font_size)
             text_width = math.ceil(font.getlength(self.fingerprint))
             sequence = LifeHashSequence(

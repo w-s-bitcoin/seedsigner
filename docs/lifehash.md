@@ -57,19 +57,23 @@ its direct, Cancel-first confirmation and shows only the destination without
 a passphrase. These display identities do not participate in storage
 replacement or duplicate detection.
 
-The loaded seed's main menu uses the same known relationships in its compact
-header. An ordinary seed has one LifeHash, or its unpassphrased LifeHash →
-current LifeHash when it has a passphrase. A known BIP-85 child shows its actual
-deriving parent's snapshot → child with a blue arrow. A passphrased child
-shows parent → child without a passphrase → current child, with a blue first
-arrow and yellow second arrow. The parent snapshot includes the passphrase
-used for derivation; an absent snapshot never invents a parent step.
+Each relationship display contains at most two LifeHashes: the immediate
+source and destination for the relationship being shown. The loaded seed's
+main menu prioritizes the current passphrase relationship. Any seed with a
+passphrase, including a BIP-85 child, shows its own wallet without a passphrase
+→ current wallet with a yellow arrow. Otherwise, a known BIP-85 child shows
+its actual deriving parent's snapshot → child with a blue arrow. A plain seed
+or a child without a known parent snapshot shows only its current LifeHash.
+
+The parent snapshot includes any passphrase used for derivation. It remains
+stored when a child has its own passphrase, even though the header displays
+only the child's passphrase relationship. Removing that passphrase restores
+the parent → child display. An absent snapshot never invents a parent step.
 
 Only the current hexadecimal fingerprint is written. All header LifeHashes
-remain 20px. One- and two-tile headers use 20px fixed-width XFP text; the
-three-tile header uses 16px text to retain the full eight digits within the
-184px space beside Back on the 240px display. This header does not change
-seed metadata, derivation, or selection.
+and fixed-width XFP text remain 20px, with the full eight digits fitting beside
+Back on the 240px display. This header does not change seed metadata,
+derivation, or selection.
 
 The menu uses checks to show the selected seed's state. **BIP-85 child seed**
 has a blue check when this seed is a known derived child; **BIP-39 Passphrase**
@@ -78,23 +82,24 @@ this seed currently has a passphrase. A parent is not marked
 as a child merely because it has derived one. The existing settings still
 control whether each menu action is shown.
 
-The **In-Memory Seeds** list shows the selected wallet's derivation steps with
-LifeHashes and right-pointing arrows. Only the final, current fingerprint is
-written as hexadecimal text:
+The **In-Memory Seeds** list uses the same limit and passphrase priority as
+the loaded-seed header. Each row shows one LifeHash or one source → destination
+pair. Only the current fingerprint is written as hexadecimal text:
 
 | Loaded seed | LifeHash sequence |
 | --- | --- |
 | Ordinary seed | Current wallet |
 | Ordinary seed with a passphrase | Without passphrase → current wallet |
 | Known BIP-85 child | Deriving parent → current child |
-| Known BIP-85 child with a passphrase | Deriving parent → child without passphrase → current child |
+| Known BIP-85 child with a passphrase | Child without passphrase → current child |
 
 Arrows use the same semantic colors as the menu checks: the shared
 passphrase yellow (`#FFE20E`) marks a passphrase step, while blue marks
-a BIP-85 parent-to-child derivation. A passphrased-child row therefore has a
-blue first arrow and a passphrase-colored second arrow. The convention also
-applies to passphrase review, the loaded-seed header, BIP-85 review, and the
-persistent child-word header. Labels, sequence positions, and hexadecimal
+a BIP-85 parent-to-child derivation. A passphrased-child row has one yellow
+arrow. The convention also applies to passphrase review, the loaded-seed
+header, BIP-85 review, and the persistent child-word header. BIP-85 review and
+child-word pages always show the actual deriving parent → child, including
+when that parent is itself a passphrased child. Labels, sequence positions, and hexadecimal
 fingerprints remain available; LifeHash pixels are unchanged. Unrelated
 success and verification checks retain their existing green color.
 Selected rows keep these exact colors. Compact black backings behind the
@@ -109,14 +114,15 @@ from the configured arrow color. The coverage-mask path preserves the shared
 color while retaining antialiased edges; other text rendering is unchanged.
 
 Rows use 20px LifeHashes, 20px fixed-width fingerprint text, and 10px gaps
-on each side of an arrow. Derivation steps are retained even if two 32-bit
-fingerprints happen to be equal; matching XFPs do not prove matching wallets.
+on each side of an arrow. Both roles in a source → destination pair remain
+visible even if their 32-bit fingerprints happen to be equal; matching XFPs
+do not prove matching wallets.
 
 The parent image uses its fingerprint at child creation, including any
 passphrase used for derivation. Discarding or later editing the loaded parent
 does not change the child's recorded origin. If no parent fingerprint is
-known, the row omits that step. Choosing any row opens its final current
-wallet, not one of the preceding identities.
+known, a child without its own passphrase shows only its current LifeHash.
+Choosing any row opens its current wallet.
 
 Discarding a loaded seed returns to **In-Memory Seeds** with that entry removed.
 If no loaded seeds remain, it returns to the main menu. This applies equally to
@@ -365,23 +371,30 @@ scaling, independent returned images, and bounded public-data caching.
 The BIP-85 index-change flow tests cover both word
 counts, unchanged-index preservation, sibling replacement/separate loading,
 grandchild derivation with the child's passphrase, backup navigation, stale
-parent/source rejection, and duplicate selection. The complete non-screenshot
-suite and all 22 screenshot locales were validated. Screenshot generation
-produced 3,520 PNGs, with 198 supplemental captures and 50 native gallery
-captures. Native captures and the live browser verified the actual
-passphrased parent `0d777ffb` → child `cca51e4b` with a blue arrow, plus the
-yellow step to the child's own passphrase wallet `4be9bd39`. Only the terminal
-XFP is printed, without overlapping Back. The live browser
-confirmed **Continue** first and selected by default. Back from **Load Wallet**
+parent/source rejection, and duplicate selection.
+
+For the current two-LifeHash presentation, all 584 non-screenshot tests passed
+and the preview generated 50 native gallery PNGs. The regression tests cover
+passphrase priority in headers and in-memory rows, the two-role limit even for
+longer input sequences, equal-fingerprint roles, arrow colors, and the full 20px
+XFP fitting beside Back.
+
+Before the two-LifeHash display limit was introduced, the complete
+non-screenshot suite and all 22 screenshot locales were validated. Screenshot
+generation produced 3,520 PNGs, with 198 supplemental captures and 50 native
+gallery captures. That earlier revision's native captures and live browser
+verified the passphrased parent and child relationships, full current XFP
+visibility, and **Continue** first and selected by default. Back from **Load Wallet**
 restored **Change Wallet** with the demonstration passphrase `aaa` intact and
 Continue selected; storage still contained only the original `73c5da0a` wallet. The live preview confirmed
 matching yellow passphrase text and symbols, then **Continue → Load Wallet**
 with **Replace current** selected by default. Choosing **Load separately** for
 the demonstration passphrase `aaa` retained `73c5da0a` and loaded `382af2cb`;
 both appeared in **In-Memory Seeds** with the yellow relationship arrow.
-Normal and selected mixed-color rows and the child menu were also checked.
-In-memory relationship rows were checked across all 22 locales, including
-the selected three-LifeHash row.
+Normal and selected relationship rows and the child menu were also checked
+in that revision, with in-memory rows checked across all 22 locales. These
+historical checks describe the earlier layout; the current two-LifeHash
+presentation has not been rerun across all 22 locales.
 
 Cross-implementation comparisons must use the same four input bytes, v2,
 module size 1, no alpha, and unscaled row-major RGB data.
