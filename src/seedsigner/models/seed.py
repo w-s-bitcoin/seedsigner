@@ -150,6 +150,20 @@ class Seed:
         return hexlify(root.child(0).fingerprint).decode('utf-8')
 
 
+    def get_fingerprint_without_passphrase(self, network: str = SettingsConstants.MAINNET) -> str:
+        """Derive the unextended seed's fingerprint without changing this wallet."""
+        if not self.has_passphrase:
+            return self.get_fingerprint(network)
+
+        # Keep the derivation type (including Electrum) and leave the loaded seed
+        # untouched throughout derivation, so other references remain valid.
+        return type(self)(
+            mnemonic=self.mnemonic_list,
+            passphrase="",
+            wordlist_language_code=self.wordlist_language_code,
+        ).get_fingerprint(network)
+
+
     def get_xpub(self, wallet_path: str = '/', network: str = SettingsConstants.MAINNET):
         # Import here to avoid slow startup times; takes 1.35s to import the first time
         from seedsigner.helpers import embit_utils

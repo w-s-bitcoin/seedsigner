@@ -177,6 +177,7 @@ def generate_screenshots(locale):
 
         controller.settings.set_value(SettingsConstants.SETTING__SIG_TYPES, [attr for attr, name in SettingsConstants.ALL_SIG_TYPES])
         controller.settings.set_value(SettingsConstants.SETTING__SCRIPT_TYPES, [attr for attr, name in SettingsConstants.ALL_SCRIPT_TYPES])
+        controller.settings.set_value(SettingsConstants.SETTING__PASSPHRASE, SettingsConstants.OPTION__ENABLED)
 
         controller.storage.seeds.append(seed_12)
         controller.storage.seeds.append(seed_12b)
@@ -381,6 +382,14 @@ def generate_screenshots(locale):
                 ScreenshotConfig(seed_views.SeedAddPassphraseView, dict(initial_keyboard=SeedAddPassphraseScreen.KEYBOARD__SYMBOLS_2_BUTTON_TEXT), screenshot_name="SeedAddPassphraseView_symbols_2"),
                 ScreenshotConfig(seed_views.SeedAddPassphraseExitDialogView),
                 ScreenshotConfig(seed_views.SeedReviewPassphraseView),
+
+                ScreenshotConfig(seed_views.SeedPassphraseMenuView, dict(seed=seed_12)),
+                ScreenshotConfig(seed_views.SeedEditPassphraseView, dict(seed=seed_12)),
+                ScreenshotConfig(seed_views.SeedCancelPassphraseView, dict(seed=seed_12)),
+                ScreenshotConfig(seed_views.SeedConfirmPassphraseView, dict(seed=seed_12b, passphrase="demo-wallet"), screenshot_name="SeedConfirmPassphraseView_add"),
+                ScreenshotConfig(seed_views.SeedConfirmPassphraseView, dict(seed=seed_12, passphrase="demo-wallet"), screenshot_name="SeedConfirmPassphraseView_edit"),
+                ScreenshotConfig(seed_views.SeedConfirmPassphraseView, dict(seed=seed_12, passphrase=""), screenshot_name="SeedConfirmPassphraseView_remove"),
+                ScreenshotConfig(seed_views.SeedConfirmPassphraseView, dict(seed=seed_12, passphrase="A long demonstration passphrase that needs more than one review page."), screenshot_name="SeedConfirmPassphraseView_long"),
                 
                 ScreenshotConfig(seed_views.SeedOptionsView, dict(seed=seed_12)),
                 ScreenshotConfig(seed_views.SeedBackupView,  dict(seed=seed_12)),

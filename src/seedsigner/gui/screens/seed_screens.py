@@ -2,7 +2,7 @@ import logging
 import math
 import time
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from gettext import gettext as _
 from PIL import Image, ImageDraw, ImageFilter
 from typing import List
@@ -10,7 +10,7 @@ from typing import List
 from seedsigner.hardware.buttons import HardwareButtons, HardwareButtonsConstants
 from seedsigner.helpers.qr import QR
 from seedsigner.gui.components import (Button, FontAwesomeIconConstants, Fonts, FormattedAddress, IconButton,
-    IconTextLine, SeedSignerIconConstants, TextArea, GUIConstants, reflow_text_into_pages)
+    IconTextLine, FingerprintHeader, FingerprintTransition, SeedSignerIconConstants, TextArea, GUIConstants, reflow_text_into_pages)
 from seedsigner.gui.keyboard import Keyboard, TextEntryDisplay
 from seedsigner.gui.renderer import Renderer
 from seedsigner.models.threads import BaseThread, ThreadsafeCounter
@@ -443,14 +443,33 @@ class SeedFinalizeScreen(ButtonListScreen):
 @dataclass
 class SeedOptionsScreen(ButtonListScreen):
     fingerprint: str = None
+    fingerprint_without: str = None
+    checked_button_indices: List[int] = None
+    checked_button_colors: dict[int, str] = None
+    selected_checked_button_colors: dict[int, str] = None
 
     def __post_init__(self):
         self.top_nav_lifehash_fingerprint = self.fingerprint
+        self.top_nav_lifehash_fingerprint_source = self.fingerprint_without
+        self.top_nav_lifehash_arrow_color = GUIConstants.PASSPHRASE_COLOR
         self.top_nav_icon_name = SeedSignerIconConstants.FINGERPRINT
         self.top_nav_icon_color = GUIConstants.INFO_COLOR
         self.title = self.fingerprint
         self.is_button_text_centered = False
         self.is_bottom_list = True
+        checked_indices = set(self.checked_button_indices or [])
+        checked_colors = self.checked_button_colors or {}
+        selected_checked_colors = self.selected_checked_button_colors or {}
+        self.button_data = [
+            replace(option, right_icon_name=SeedSignerIconConstants.CHECK,
+                    right_icon_color=checked_colors.get(index, GUIConstants.SUCCESS_COLOR),
+                    selected_right_icon_color=selected_checked_colors.get(index, checked_colors.get(index, GUIConstants.SUCCESS_COLOR)),
+                    selected_right_icon_background_color=(GUIConstants.BACKGROUND_COLOR
+                                                          if index in checked_colors or index in selected_checked_colors
+                                                          else option.selected_right_icon_background_color))
+            if index in checked_indices else option
+            for index, option in enumerate(self.button_data)
+        ]
 
         super().__post_init__()
 
@@ -1057,69 +1076,153 @@ class SeedReviewPassphraseScreen(ButtonListScreen):
     fingerprint_without: str = None
     fingerprint_with: str = None
     passphrase: str = None
+    page_index: int = 0
+
+    @staticmethod
+    def passphrase_pages(passphrase: str) -> list[str]:
+        # Two fixed-width lines fit beneath the wallet identities and above the
+        # two review buttons. Whitespace remains visible on every page.
+        if not passphrase:
+            return [""]
+        visible = passphrase.replace(" ", "\u2589") if passphrase != passphrase.strip() or "  " in passphrase else passphrase
+        return [visible[i:i + 44] for i in range(0, len(visible), 44)]
 
     def __post_init__(self):
-        # Customize defaults
+        pages = self.passphrase_pages(self.passphrase)
         self.title = _("Verify Passphrase")
+        if len(pages) > 1:
+            self.title = _("Passphrase: {}/{}").format(self.page_index + 1, len(pages))
         self.is_bottom_list = True
-
         super().__post_init__()
 
-        self.components.append(IconTextLine(
-            lifehash_fingerprint=self.fingerprint_with,
-            lifehash_size=24,
-            icon_name=SeedSignerIconConstants.FINGERPRINT,
-            icon_color=GUIConstants.INFO_COLOR,
-            # TRANSLATOR_NOTE: Describes the effect of applying a BIP-39 passphrase; it changes the seed's fingerprint
-            label_text=_("changes fingerprint"),
-            value_text=f"{self.fingerprint_without} >> {self.fingerprint_with}",
-            is_text_centered=True,
-            screen_y = self.buttons[0].screen_y - GUIConstants.COMPONENT_PADDING - int(GUIConstants.get_body_font_size()*2.5)
+        self.components.append(FingerprintTransition(
+            fingerprint_source=self.fingerprint_without,
+            fingerprint_new=self.fingerprint_with,
+            arrow_color=GUIConstants.PASSPHRASE_COLOR,
+            screen_y=self.top_nav.height,
         ))
-
-        if self.passphrase != self.passphrase.strip() or "  " in self.passphrase:
-            self.passphrase = self.passphrase.replace(" ", "\u2589")
-        available_height = self.components[-1].screen_y - self.top_nav.height + GUIConstants.COMPONENT_PADDING
-        max_font_size = GUIConstants.get_top_nav_title_font_size() + 8
-        min_font_size = GUIConstants.get_top_nav_title_font_size() - 4
-        font_size = max_font_size
-        max_lines = 3
-        passphrase = [self.passphrase]
-        found_solution = False
-        for font_size in range(max_font_size, min_font_size, -2):
-            if found_solution:
-                break
-            font = Fonts.get_font(font_name=GUIConstants.FIXED_WIDTH_FONT_NAME, size=font_size)
-            left, top, right, bottom  = font.getbbox("X")
-            char_width, char_height = right - left, bottom - top
-            for num_lines in range(1, max_lines+1):
-                # Break the passphrase into n lines
-                chars_per_line = math.ceil(len(self.passphrase) / num_lines)
-                passphrase = []
-                for i in range(0, len(self.passphrase), chars_per_line):
-                    passphrase.append(self.passphrase[i:i+chars_per_line])
-                
-                # See if it fits in this configuration
-                if char_width * len(passphrase[0]) <= self.canvas_width - 2*GUIConstants.EDGE_PADDING:
-                    # Width is good...
-                    if num_lines * char_height <= available_height:
-                        # And the height is good!
-                        found_solution = True
-                        break
-
-        # Set up each line of text
-        screen_y = self.top_nav.height + int((available_height - char_height*num_lines)/2) - GUIConstants.COMPONENT_PADDING
-        for line in passphrase:
+        self.components.append(TextArea(
+            text=_("Passphrase"), font_size=14,
+            screen_y=self.top_nav.height + 24, auto_line_break=False,
+        ))
+        page = pages[self.page_index]
+        for index, line in enumerate([page[i:i + 22] for i in range(0, len(page), 22)]):
             self.components.append(TextArea(
                 text=line,
                 font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
-                font_size=font_size,
-                font_color="orange",
-                is_text_centered=True,
-                screen_y=screen_y,
+                font_size=18,
+                font_color=GUIConstants.PASSPHRASE_COLOR,
+                preserve_font_color=True,
+                screen_y=self.top_nav.height + 40 + index * 20,
+                auto_line_break=False,
             ))
-            screen_y += char_height + 2
 
+
+
+@dataclass
+class SeedConfirmPassphraseScreen(ButtonListScreen):
+    """Review a candidate without ever changing the currently loaded wallet."""
+    fingerprint_without: str = None
+    fingerprint_new: str = None
+    passphrase: str = ""
+    page_index: int = 0
+
+    @staticmethod
+    def passphrase_pages(passphrase: str) -> list[str]:
+        # Fixed-width review, two 22-character lines per page at 18px. Preserve
+        # significant whitespace; a blank value alone means remove the passphrase.
+        if not passphrase:
+            return [""]
+        visible = passphrase.replace(" ", "\u2589") if passphrase != passphrase.strip() or "  " in passphrase else passphrase
+        return [visible[i:i + 44] for i in range(0, len(visible), 44)]
+
+    def __post_init__(self):
+        pages = self.passphrase_pages(self.passphrase)
+        self.title = _("Change Wallet?") if self.passphrase else _("Remove Passphrase?")
+        if len(pages) > 1:
+            # TRANSLATOR_NOTE: Page number while reviewing a long BIP-39 passphrase.
+            self.title = _("Passphrase: {}/{}").format(self.page_index + 1, len(pages))
+        self.is_bottom_list = True
+        super().__post_init__()
+
+        if not self.passphrase:
+            self.components.append(TextArea(
+                text=_("Return to wallet without passphrase?"),
+                screen_y=self.top_nav.height,
+                height=50,
+                font_size=17,
+            ))
+            self.components.append(IconTextLine(
+                lifehash_fingerprint=self.fingerprint_new,
+                icon_name=SeedSignerIconConstants.FINGERPRINT,
+                icon_color=GUIConstants.INFO_COLOR,
+                value_text=self.fingerprint_new,
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=24,
+                is_text_centered=True,
+                screen_y=self.top_nav.height + 64,
+            ))
+            return
+
+        self.components.append(FingerprintTransition(
+            fingerprint_source=self.fingerprint_without,
+            fingerprint_new=self.fingerprint_new,
+            arrow_color=GUIConstants.PASSPHRASE_COLOR,
+            screen_y=self.top_nav.height,
+        ))
+        self.components.append(TextArea(
+            text=_("Passphrase"), font_size=14,
+            screen_y=self.top_nav.height + 24, auto_line_break=False,
+        ))
+        page = pages[self.page_index]
+        for index, line in enumerate([page[i:i + 22] for i in range(0, len(page), 22)]):
+            self.components.append(TextArea(
+                text=line,
+                font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+                font_size=18,
+                font_color=GUIConstants.PASSPHRASE_COLOR,
+                preserve_font_color=True,
+                screen_y=self.top_nav.height + 40 + index * 20,
+                auto_line_break=False,
+            ))
+
+
+
+@dataclass
+class SeedWalletSaveScreen(ButtonListScreen):
+    """Choose how to retain a reviewed wallet, showing only its public identity."""
+    fingerprint_source: str = None
+    fingerprint_new: str = None
+    arrow_color: str = GUIConstants.BODY_FONT_COLOR
+
+    def __post_init__(self):
+        self.title = _("Load Wallet")
+        self.is_bottom_list = True
+        super().__post_init__()
+
+        self.components.append(FingerprintHeader(
+            fingerprint_source=self.fingerprint_source,
+            fingerprint=self.fingerprint_new,
+            arrow_color=self.arrow_color,
+            screen_y=self.top_nav.height,
+        ))
+        self.components.append(TextArea(
+            text=_("Replace this entry or keep both in memory?"),
+            font_size=16,
+            screen_y=self.top_nav.height + 28,
+            height=42,
+        ))
+
+
+
+@dataclass
+class SeedPassphraseSaveScreen(SeedWalletSaveScreen):
+    fingerprint_without: str = None
+    arrow_color: str = GUIConstants.PASSPHRASE_COLOR
+
+    def __post_init__(self):
+        self.fingerprint_source = self.fingerprint_without
+        super().__post_init__()
 
 
 @dataclass

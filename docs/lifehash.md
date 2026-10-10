@@ -25,16 +25,81 @@ The helper uses nearest-neighbor scaling for other display sizes. Compatibility
 checks compare the original 32×32 RGB pixels, before display resizing, borders,
 or rounded corners. Sparrow itself subsequently resizes its icon to 24×24.
 
-## Existing fingerprint displays
+Passphrase review places two identities horizontally with a right-pointing
+arrow: first the mnemonic's wallet **without a passphrase**, then the candidate
+wallet. Each identity has a 20px LifeHash beside its 16px hexadecimal fingerprint.
+The first identity remains the unpassphrased baseline when editing an already
+passphrased loaded wallet; it does not represent that wallet's current
+passphrase. The baseline is derived from a separate seed object with the same
+mnemonic and wordlist, without mutating the loaded source or candidate. The
+shared helper preserves the seed type, including Electrum derivation rules in
+initial finalization/review; loaded-passphrase editing remains BIP-39 only.
+Model tests cover source identity preservation on mainnet, testnet, and regtest.
 
-Existing seed menus, seed selection, finalization, export details, address
-exploration, final-word calculation, discard confirmation, and PSBT signer
-selection retain their hexadecimal XFP beside its LifeHash. Multisig descriptor
-review shows four signing-key identities per page and preserves the original
-flow until all pages have been reviewed.
+An explicit **Passphrase** label appears above the highlighted passphrase text.
+Both initial and loaded-wallet review show up to two 22-character lines per
+page (44 characters total). Initial loading offers **Done** only on the final
+page; loaded-wallet review offers **Continue** only on the final page.
+In loaded-wallet review, **Continue** (or **Next** on earlier pages) is the
+first and default action, followed by **Edit passphrase** and **Cancel**.
 
-Reusable relationship components are available to subsequent workflow changes;
-this layer does not add loaded-seed passphrase editing or BIP-85 child loading.
+For a nonempty passphrase, Continue opens **Load Wallet** with **Replace
+current** selected by default, **Load separately**, and **Cancel**. Replacement
+changes the selected stored wallet. Separate loading preserves that wallet
+and selects an additional passphrase variant, or its existing canonical
+full-seed-bytes match. Both paths retain any unrelated pending seed and other loaded wallets. Committing a different wallet clears
+prior signing/address state and navigation history. **Back** from Load Wallet
+returns to the previous review page with the same candidate and passphrase
+intact; **Cancel** discards the draft and returns to the original seed menu.
+Neither action changes the stored original. Removal retains
+its direct, Cancel-first confirmation and shows only the destination without
+a passphrase. These display identities do not participate in storage
+replacement or duplicate detection.
+
+The loaded seed's main menu shows its current LifeHash, or its unpassphrased
+LifeHash → current LifeHash when it has a passphrase. Only the current
+hexadecimal fingerprint is written. Header LifeHashes and fixed-width XFP text
+are 20px; the full eight digits fit beside Back on the 240px display.
+
+The **BIP-39 Passphrase** menu action uses the shared yellow (`#FFE20E`,
+`PASSPHRASE_COLOR`) check when this seed currently has a passphrase. The existing
+passphrase setting controls whether this action is shown: Enabled and Required
+expose it, Disabled hides it, and loaded Electrum custom extensions are unchanged.
+
+The **In-Memory Seeds** list shows the selected wallet's derivation steps with
+LifeHashes and right-pointing arrows. Only the final, current fingerprint is
+written as hexadecimal text:
+
+| Loaded seed | LifeHash sequence |
+| --- | --- |
+| Ordinary seed | Current wallet |
+| Ordinary seed with a passphrase | Without passphrase → current wallet |
+
+Arrows use the same shared passphrase yellow (`#FFE20E`) as the menu check.
+This convention applies to passphrase review, the loaded-seed header, and
+In-Memory Seeds. LifeHash pixels and unrelated green success checks are unchanged.
+Selected rows keep these exact colors. Compact black backings behind the
+arrows and semantic checkmarks keep them visible against the orange selection
+background without recoloring the symbols or LifeHash images.
+
+The initial and loaded-passphrase review text uses the same `#FFE20E` yellow.
+Those two fields opt into `TextArea.preserve_font_color`: their glyph coverage
+is resized and sharpened in grayscale before compositing the chosen text
+color. Sharpening RGB glyphs directly had shifted the visible text color away
+from the configured arrow color. The coverage-mask path preserves the shared
+color while retaining antialiased edges; other text rendering is unchanged.
+
+Rows use 20px LifeHashes, 20px fixed-width fingerprint text, and 10px gaps
+on each side of an arrow. Derivation steps are retained even if two 32-bit
+fingerprints happen to be equal; matching XFPs do not prove matching wallets.
+
+Choosing any row opens its final current wallet.
+
+Discarding a loaded seed returns to **In-Memory Seeds** with that entry removed.
+If no loaded seeds remain, it returns to the main menu. This applies equally to
+ordinary seeds and passphrased wallets. Discard clears prior
+wallet and navigation state while preserving the other loaded seeds and any
+unrelated pending seed.
 
 The bounded cache contains only public fingerprint bytes and derived RGB bytes.
 Each call returns a fresh image. The icon is a visual representation of the
@@ -172,6 +237,12 @@ leading zeros, and known numerical edge cases. Seven additional exact-bit
 numeric cases pin three luminance results and four modulo boundaries from the
 independent C++ fixtures. The 64 helper tests also cover input validation,
 scaling, independent returned images, and bounded public-data caching.
+
+Passphrase flow tests cover add/edit/remove, full-byte deduplication, immutable
+source and pending-seed preservation, settings gates, long-review pagination,
+Save/Back/Cancel navigation, and signing-state cleanup only on commit. Native
+review rendering tests verify matching yellow text and arrow pixels. The public
+preview can generate the actual passphrase screens and separate-loading list.
 
 Cross-implementation comparisons must use the same four input bytes, v2,
 module size 1, no alpha, and unscaled row-major RGB data.

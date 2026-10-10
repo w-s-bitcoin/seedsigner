@@ -225,6 +225,22 @@ class Controller(Singleton):
         del self.storage.seeds[index]
 
 
+    def replace_seed(self, original: Seed, replacement: Seed) -> Seed:
+        selected_seed = self.storage.replace_seed(original, replacement)
+        if selected_seed is original:
+            return original
+
+        self.clear_wallet_state()
+        return selected_seed
+
+
+    def load_seed(self, seed: Seed) -> Seed:
+        """Select a separately loaded seed, preserving all existing seeds."""
+        selected_seed = self.storage.add_seed(seed)
+        self.clear_wallet_state()
+        return selected_seed
+
+
     def clear_wallet_state(self):
         # Wallet-specific state and navigation may retain the old seed or its
         # derived addresses. Re-enter those flows with the newly selected wallet.
@@ -355,6 +371,9 @@ class Controller(Singleton):
                     # to the next View so it should be as if this View never happened.
                     current_view = self.back_stack.pop()
                     logger.info(f"Skipping current view: {current_view}")
+                    # A redirected View may own sensitive temporary seed state.
+                    # Do not retain it in this loop after removing it from history.
+                    del current_view
 
                 # Hang on to this reference...
                 clear_history = next_destination.clear_history
