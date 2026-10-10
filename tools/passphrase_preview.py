@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the real passphrase and LifeHash screens without Raspberry Pi hardware.
+"""Run the real passphrase, LifeHash and BIP-85 screens without Raspberry Pi hardware.
 
 Install requirements.txt, tests/requirements.txt and l10n/requirements-l10n.txt
 in a Python 3.10–3.12 virtual environment, then compile catalogs with
@@ -152,7 +152,7 @@ button,select{background:#2c3139;border:1px solid #505862;color:#fff;border-radi
 @media(max-width:600px){#screen{width:240px;height:240px}.device{gap:16px;padding:16px}.side{display:flex;gap:8px}}
 </style>
 <div class="tag">ACTUAL APPLICATION RENDERER · PUBLIC TEST SEED</div>
-<h1>SeedSigner passphrase and LifeHash preview</h1>
+<h1>SeedSigner passphrase, LifeHash and BIP-85 preview</h1>
 <p>Use the directional pad and three side buttons, just as on the device.
 Arrow keys move; Enter selects; 1, 2 and 3 press the side buttons.</p>
 <div class="settings"><select id="scenario" aria-label="Demo scenario">
@@ -160,6 +160,15 @@ Arrow keys move; Enter selects; 1, 2 and 3 press the side buttons.</p>
 <option value="existing">Seed with “preview” passphrase</option>
 <option value="save-choice">Review “aaa”, then choose how to load</option>
 <option value="disabled">Passphrase support disabled</option>
+<option value="bip85-bare">BIP-85 from seed without passphrase</option>
+<option value="bip85-existing">BIP-85 from passphrased seed</option>
+<option value="bip85-loaded">Loaded BIP-85 child (parent retained)</option>
+<option value="bip85-loaded-existing">Loaded child of passphrased parent</option>
+<option value="bip85-loaded-existing-passphrase">Passphrased child of passphrased parent</option>
+<option value="bip85-change">Change child index (parent retained)</option>
+<option value="bip85-grandchild">Derive from a loaded child</option>
+<option value="bip85-parent-missing">Change index with parent unloaded</option>
+<option value="lineage">In-Memory Seeds: wallet relationships</option>
 <option value="settings">BIP-39 passphrase setting</option></select>
 <button id="reset">Reset demo</button><a href="/frame.png" download="seedsigner-preview.png">Save screen</a></div>
 <div class="device"><div class="pad">
@@ -170,7 +179,7 @@ Arrow keys move; Enter selects; 1, 2 and 3 press the side buttons.</p>
 <div class="side"><button data-key="key1">1</button><button data-key="key2">2</button><button data-key="key3">3</button></div></div>
 <p id="status">Starting…</p>
 <p>Mnemonic: <code>abandon</code> × 11, <code>about</code>. For development only: never enter real secrets.
-The seed menu, settings and passphrase flows use the application code. Wallet fingerprints remain visible
+The seed menu, settings, passphrase and BIP-85 flows use the application code. Wallet fingerprints remain visible
 beside their LifeHash v2 images. Other features return to the main menu.</p>
 <script>
 const screen=document.querySelector('#screen'),status=document.querySelector('#status');let version=-1;
@@ -196,8 +205,32 @@ def configure_controller(scenario="bare"):
     settings.set_value(SettingsConstants.SETTING__MICROSD_TOAST_TIMER, 0)
     settings.set_value(SettingsConstants.SETTING__PASSPHRASE,
                        SettingsConstants.OPTION__DISABLED if scenario == "disabled" else SettingsConstants.OPTION__ENABLED)
-    seed = Seed(MNEMONIC, passphrase=DEMO_PASSPHRASE if scenario == "existing" else "")
+    settings.set_value(SettingsConstants.SETTING__BIP85_CHILD_SEEDS, SettingsConstants.OPTION__ENABLED)
+    seed = Seed(MNEMONIC, passphrase=DEMO_PASSPHRASE if scenario in {
+        "existing", "bip85-existing", "bip85-loaded-existing", "bip85-loaded-existing-passphrase",
+        "bip85-change", "bip85-grandchild", "bip85-parent-missing",
+    } else "")
     controller.storage.seeds.append(seed)
+    if scenario in {"bip85-loaded", "bip85-loaded-existing", "bip85-loaded-existing-passphrase",
+                    "bip85-change", "bip85-grandchild", "bip85-parent-missing"}:
+        destination = seed_views.SeedBIP85LoadChildView(seed=seed, num_words=12, child_index=0).run()
+        seed = destination.view_args["seed"]
+        if scenario in {"bip85-loaded-existing-passphrase", "bip85-grandchild"}:
+            # Apply the public demo passphrase through the actual save operation,
+            # preserving the child's stored deriving-parent fingerprint.
+            with patch.object(seed_views.SeedPassphraseSaveView, "run_screen", return_value=0):
+                destination = seed_views.SeedPassphraseSaveView(seed=seed, passphrase="child-preview").run()
+            seed = destination.view_args["seed"]
+        if scenario == "bip85-parent-missing":
+            controller.storage.seeds = [seed]
+    elif scenario == "lineage":
+        child_words = seed.get_bip85_child_mnemonic(0, 12).split()
+        parent_fingerprint = seed.get_fingerprint()
+        controller.storage.seeds.extend([
+            Seed(MNEMONIC, passphrase=DEMO_PASSPHRASE),
+            Seed(child_words, bip85_parent_fingerprint=parent_fingerprint),
+            Seed(child_words, passphrase="child-preview", bip85_parent_fingerprint=parent_fingerprint),
+        ])
     return controller, seed
 
 
@@ -258,33 +291,124 @@ def generate_screenshots(output, renderer):
         ("21-loaded-long-last-page", seed_views.SeedConfirmPassphraseView,
          {"seed": protected, "passphrase": long_passphrase, "page_index": final_loaded_page}),
         ("22-seed-options-passphrase", seed_views.SeedOptionsView, {"seed": edit_aa}),
+        ("23-bip85-bare-review", seed_views.SeedBIP85ReviewView,
+         {"seed": bare, "num_words": 12, "child_index": 0}),
+        ("24-bip85-bare-words-first", seed_views.SeedWordsView,
+         {"seed": bare, "bip85_data": {"num_words": 12, "child_index": 0}}),
+        ("25-bip85-bare-words-last", seed_views.SeedWordsView,
+         {"seed": bare, "bip85_data": {"num_words": 12, "child_index": 0}, "page_index": 3}),
+        ("26-bip85-passphrased-review", seed_views.SeedBIP85ReviewView,
+         {"seed": protected, "num_words": 24, "child_index": 0}),
+        ("27-bip85-passphrased-words-first", seed_views.SeedWordsView,
+         {"seed": protected, "bip85_data": {"num_words": 24, "child_index": 0}}),
+        ("28-bip85-passphrased-words-last", seed_views.SeedWordsView,
+         {"seed": protected, "bip85_data": {"num_words": 24, "child_index": 0}, "page_index": 7}),
+        ("29-bip85-max-index-review", seed_views.SeedBIP85ReviewView,
+         {"seed": protected, "num_words": 24, "child_index": 2**31 - 1}),
+        ("30-bip85-max-index-words-last", seed_views.SeedWordsView,
+         {"seed": protected, "bip85_data": {"num_words": 24, "child_index": 2**31 - 1}, "page_index": 7}),
+        ("31-bip85-load-child-prompt", seed_views.SeedWordsBackupTestPromptView,
+         {"seed": bare, "bip85_data": {"num_words": 12, "child_index": 0}}),
+        ("32-bip85-child-loaded", seed_views.SeedBIP85LoadChildView,
+         {"seed": bare, "num_words": 12, "child_index": 0}),
+        ("33-bip85-parent-and-child", seed_views.SeedsMenuView, {}),
+        ("34-bip85-child-passphrase-review", seed_views.SeedConfirmPassphraseView,
+         lambda: {"seed": controller.storage.seeds[-1], "passphrase": "child-preview"}),
+        ("35-bip85-child-passphrase-menu", seed_views.SeedConfirmPassphraseView,
+         lambda: {"seed": controller.storage.seeds[-1], "passphrase": "child-preview"}),
+        ("36-in-memory-wallet-relationships", seed_views.SeedsMenuView, {}),
+        ("37-in-memory-child-passphrase-selected", seed_views.SeedsMenuView, {}),
+        ("38-child-passphrase-bip85-selected", seed_views.SeedOptionsView,
+         lambda: {"seed": controller.storage.seeds[-1]}),
         ("39-passphrase-load-choice", seed_views.SeedConfirmPassphraseView,
          lambda: {"seed": controller.storage.seeds[0], "passphrase": "aaa"}),
         ("40-passphrase-loaded-separately", seed_views.SeedConfirmPassphraseView,
          lambda: {"seed": controller.storage.seeds[0], "passphrase": "aaa"}),
+        ("41-bip85-loaded-passphrased-parent", seed_views.SeedOptionsView,
+         lambda: {"seed": controller.storage.seeds[-1]}),
+        ("42-bip85-passphrased-child-passphrased-parent", seed_views.SeedOptionsView,
+         lambda: {"seed": controller.storage.seeds[-1]}),
+        ("43-bip85-child-menu", seed_views.SeedBIP85ChildMenuView,
+         lambda: {"seed": controller.storage.seeds[-1]}),
+        ("44-bip85-change-index-prefilled", seed_views.SeedBIP85SelectChildIndexView,
+         lambda: {"seed": controller.storage.seeds[0], "num_words": 12,
+                  "change_from_seed": controller.storage.seeds[1]}),
+        ("45-bip85-sibling-review", seed_views.SeedBIP85ReviewView,
+         lambda: {"seed": controller.storage.seeds[0], "num_words": 12, "child_index": 1,
+                  "change_from_seed": controller.storage.seeds[1]}),
+        ("46-bip85-sibling-load-choice", seed_views.SeedBIP85LoadChildView,
+         lambda: {"seed": controller.storage.seeds[0], "num_words": 12, "child_index": 1,
+                  "change_from_seed": controller.storage.seeds[1]}),
+        ("47-bip85-sibling-loaded-separately", seed_views.SeedBIP85LoadChildView,
+         lambda: {"seed": controller.storage.seeds[0], "num_words": 12, "child_index": 1,
+                  "change_from_seed": controller.storage.seeds[1]}),
+        ("48-bip85-grandchild-review", seed_views.SeedBIP85ReviewView,
+         lambda: {"seed": controller.storage.seeds[-1], "num_words": 12, "child_index": 0}),
+        ("49-bip85-grandchild-loaded", seed_views.SeedBIP85LoadChildView,
+         lambda: {"seed": controller.storage.seeds[-1], "num_words": 12, "child_index": 0}),
+        ("50-bip85-parent-needed", seed_views.SeedBIP85ChildMenuView,
+         lambda: {"seed": controller.storage.seeds[-1]}),
+        ("51-bip85-origin-unavailable", seed_views.SeedBIP85ChildMenuView,
+         lambda: {"seed": controller.storage.seeds[-1]}),
     ]
     original_run_screen = View.run_screen
 
     def focus_passphrase(view, Screen_cls, **kwargs):
-        if (renderer.capture_path.stem in {"39-passphrase-load-choice", "40-passphrase-loaded-separately"}
+        if (renderer.capture_path.stem == "37-in-memory-child-passphrase-selected"
+                and isinstance(view, seed_views.SeedsMenuView)):
+            kwargs["selected_button"] = 3
+        if (renderer.capture_path.stem in {"35-bip85-child-passphrase-menu",
+                                          "39-passphrase-load-choice", "40-passphrase-loaded-separately"}
                 and isinstance(view, seed_views.SeedConfirmPassphraseView)):
             # Continue through the real review into its save-choice View.
             return kwargs["button_data"].index(view.APPLY)
-        if (renderer.capture_path.stem == "40-passphrase-loaded-separately"
-                and isinstance(view, seed_views.SeedPassphraseSaveView)):
+        if isinstance(view, seed_views.SeedPassphraseSaveView):
+            if renderer.capture_path.stem == "35-bip85-child-passphrase-menu":
+                return kwargs["button_data"].index(view.REPLACE)
+            if renderer.capture_path.stem == "40-passphrase-loaded-separately":
+                return kwargs["button_data"].index(view.LOAD_SEPARATELY)
+        if (renderer.capture_path.stem == "47-bip85-sibling-loaded-separately"
+                and isinstance(view, seed_views.SeedBIP85SaveChildView)):
             return kwargs["button_data"].index(view.LOAD_SEPARATELY)
+        if (renderer.capture_path.stem in {"50-bip85-parent-needed", "51-bip85-origin-unavailable"}
+                and isinstance(view, seed_views.SeedBIP85ChildMenuView)):
+            return kwargs["button_data"].index(view.CHANGE_INDEX)
         if isinstance(view, seed_views.SeedOptionsView):
+            is_bip85_selected = renderer.capture_path.stem == "38-child-passphrase-bip85-selected"
+            target_label = "BIP-85 child seed" if is_bip85_selected else "BIP-39 Passphrase"
             for index, option in enumerate(kwargs.get("button_data", [])):
-                if option.button_label == "BIP-39 Passphrase":
+                if option.button_label == target_label:
                     kwargs["selected_button"] = index
+            if is_bip85_selected:
+                kwargs["scroll_y_initial_offset"] = GUIConstants.BUTTON_HEIGHT + GUIConstants.LIST_ITEM_PADDING
         return original_run_screen(view, Screen_cls, **kwargs)
 
     with patch.object(View, "run_screen", focus_passphrase):
         for name, view_class, kwargs in cases:
             if name in {"19-initial-long-page-1", "20-initial-long-last-page"}:
                 controller.storage.set_pending_seed(long_initial_seed)
+            elif name == "32-bip85-child-loaded":
+                controller.storage.seeds = [bare]
+            elif name == "36-in-memory-wallet-relationships":
+                controller, _ = configure_controller("lineage")
             elif name == "39-passphrase-load-choice":
                 controller, _ = configure_controller()
+            elif name == "41-bip85-loaded-passphrased-parent":
+                controller, _ = configure_controller("bip85-loaded-existing")
+            elif name == "42-bip85-passphrased-child-passphrased-parent":
+                controller, _ = configure_controller("bip85-loaded-existing-passphrase")
+            elif name == "43-bip85-child-menu":
+                controller, _ = configure_controller("bip85-change")
+            elif name == "48-bip85-grandchild-review":
+                controller, _ = configure_controller("bip85-grandchild")
+            elif name == "50-bip85-parent-needed":
+                controller, _ = configure_controller("bip85-parent-missing")
+            elif name == "51-bip85-origin-unavailable":
+                controller, child = configure_controller("bip85-loaded-existing")
+                # Legacy children may know their parent fingerprint but lack the
+                # derivation index and word count needed for verified changes.
+                controller.storage.seeds[-1] = Seed(child.mnemonic_list,
+                    bip85_parent_fingerprint=child.bip85_parent_fingerprint)
             if callable(kwargs):
                 kwargs = kwargs()
             renderer.capture_path = output / f"{name}.png"
@@ -292,7 +416,7 @@ def generate_screenshots(output, renderer):
                 destination = Destination(view_class, kwargs)
                 while True:
                     destination = destination.run()
-                    if (name == "40-passphrase-loaded-separately"
+                    if (name in {"40-passphrase-loaded-separately", "47-bip85-sibling-loaded-separately"}
                             and destination.View_cls is seed_views.SeedOptionsView):
                         # Show both retained entries after the real load operation.
                         destination = Destination(seed_views.SeedsMenuView)
@@ -310,7 +434,13 @@ def generate_screenshots(output, renderer):
 def serve_preview(renderer, buttons, port):
     allowed = {"MainMenuView", "SeedsMenuView", "SeedOptionsView", "SeedDiscardView", "SeedPassphraseMenuView",
                "SeedEditPassphraseView", "SeedConfirmPassphraseView", "SeedPassphraseSaveView", "SeedCancelPassphraseView",
-               "SettingsMenuView", "SettingsEntryUpdateSelectionView", "OptionDisabledView"}
+               "SettingsMenuView", "SettingsEntryUpdateSelectionView", "OptionDisabledView",
+               "SeedBackupView", "SeedBIP85SelectNumWordsView", "SeedBIP85SelectChildIndexView",
+               "SeedBIP85InvalidChildIndexView", "SeedBIP85ReviewView", "SeedWordsWarningView",
+               "SeedBIP85LoadChildView", "SeedBIP85ChildMenuView", "SeedBIP85ParentUnavailableView",
+               "SeedBIP85SaveChildView",
+               "SeedWordsView", "SeedWordsBackupTestPromptView", "SeedWordsBackupTestView",
+               "SeedWordsBackupTestMistakeView", "SeedWordsBackupTestSuccessView"}
     original_run = Destination._run_view
 
     def run_view(destination):
@@ -318,11 +448,11 @@ def serve_preview(renderer, buttons, port):
         unsupported_setting = (
             name == "SettingsEntryUpdateSelectionView"
             and (destination.view_args or {}).get("attr_name") not in {
-                SettingsConstants.SETTING__PASSPHRASE,
+                SettingsConstants.SETTING__PASSPHRASE, SettingsConstants.SETTING__BIP85_CHILD_SEEDS,
             }
         )
         if name not in allowed or unsupported_setting:
-            renderer.notice = "This preview supports passphrase editing."
+            renderer.notice = "This preview supports passphrase editing, BIP-85 and seed-word backup."
             # Home invokes the Controller's normal flow-state cleanup. Going straight
             # back to SeedOptions could auto-resume the unsupported flow indefinitely.
             return Destination(None, clear_history=True)
@@ -339,9 +469,17 @@ def serve_preview(renderer, buttons, port):
                 if scenario == "settings":
                     destination = Destination(settings_views.SettingsEntryUpdateSelectionView,
                                               {"attr_name": SettingsConstants.SETTING__PASSPHRASE})
+                elif scenario in {"bip85-bare", "bip85-existing"}:
+                    destination = Destination(seed_views.SeedBIP85SelectNumWordsView, {"seed": seed})
+                elif scenario == "lineage":
+                    destination = Destination(seed_views.SeedsMenuView)
                 elif scenario == "save-choice":
                     destination = Destination(seed_views.SeedConfirmPassphraseView,
                                               {"seed": seed, "passphrase": "aaa"})
+                elif scenario in {"bip85-change", "bip85-parent-missing"}:
+                    destination = Destination(seed_views.SeedBIP85ChildMenuView, {"seed": seed})
+                elif scenario == "bip85-grandchild":
+                    destination = Destination(seed_views.SeedBIP85SelectNumWordsView, {"seed": seed})
                 # The preview enters mid-flow. In normal navigation this destination
                 # is already the current back-stack entry; settings replaces it after
                 # a selection with skip_current_view=True.
@@ -392,7 +530,9 @@ def serve_preview(renderer, buttons, port):
                 if self.path == "/key" and data.get("key") in KEYS:
                     buttons.events.put(KEYS[data["key"]])
                 elif self.path == "/reset" and data.get("scenario") in {
-                    "bare", "existing", "save-choice", "disabled", "settings",
+                    "bare", "existing", "save-choice", "disabled", "settings", "bip85-bare", "bip85-existing", "bip85-loaded",
+                    "bip85-loaded-existing", "bip85-loaded-existing-passphrase", "lineage",
+                    "bip85-change", "bip85-grandchild", "bip85-parent-missing",
                 }:
                     buttons.events.put(data["scenario"])
                 else:

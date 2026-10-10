@@ -47,7 +47,8 @@ For a nonempty passphrase, Continue opens **Load Wallet** with **Replace
 current** selected by default, **Load separately**, and **Cancel**. Replacement
 changes the selected stored wallet. Separate loading preserves that wallet
 and selects an additional passphrase variant, or its existing canonical
-full-seed-bytes match. Both paths retain any unrelated pending seed and other loaded wallets. Committing a different wallet clears
+full-seed-bytes match. Both paths retain any unrelated pending seed and, when
+editing a child wallet, its BIP-85 parent. Committing a different wallet clears
 prior signing/address state and navigation history. **Back** from Load Wallet
 returns to the previous review page with the same candidate and passphrase
 intact; **Cancel** discards the draft and returns to the original seed menu.
@@ -56,15 +57,26 @@ its direct, Cancel-first confirmation and shows only the destination without
 a passphrase. These display identities do not participate in storage
 replacement or duplicate detection.
 
-The loaded seed's main menu shows its current LifeHash, or its unpassphrased
-LifeHash → current LifeHash when it has a passphrase. Only the current
-hexadecimal fingerprint is written. Header LifeHashes and fixed-width XFP text
-are 20px; the full eight digits fit beside Back on the 240px display.
+The loaded seed's main menu uses the same known relationships in its compact
+header. An ordinary seed has one LifeHash, or its unpassphrased LifeHash →
+current LifeHash when it has a passphrase. A known BIP-85 child shows its actual
+deriving parent's snapshot → child with a blue arrow. A passphrased child
+shows parent → child without a passphrase → current child, with a blue first
+arrow and yellow second arrow. The parent snapshot includes the passphrase
+used for derivation; an absent snapshot never invents a parent step.
 
-The **BIP-39 Passphrase** menu action uses the shared yellow (`#FFE20E`,
-`PASSPHRASE_COLOR`) check when this seed currently has a passphrase. The existing
-passphrase setting controls whether this action is shown: Enabled and Required
-expose it, Disabled hides it, and loaded Electrum custom extensions are unchanged.
+Only the current hexadecimal fingerprint is written. All header LifeHashes
+remain 20px. One- and two-tile headers use 20px fixed-width XFP text; the
+three-tile header uses 16px text to retain the full eight digits within the
+184px space beside Back on the 240px display. This header does not change
+seed metadata, derivation, or selection.
+
+The menu uses checks to show the selected seed's state. **BIP-85 child seed**
+has a blue check when this seed is a known derived child; **BIP-39 Passphrase**
+uses the shared passphrase yellow (`#FFE20E`, `PASSPHRASE_COLOR`) when
+this seed currently has a passphrase. A parent is not marked
+as a child merely because it has derived one. The existing settings still
+control whether each menu action is shown.
 
 The **In-Memory Seeds** list shows the selected wallet's derivation steps with
 LifeHashes and right-pointing arrows. Only the final, current fingerprint is
@@ -74,10 +86,17 @@ written as hexadecimal text:
 | --- | --- |
 | Ordinary seed | Current wallet |
 | Ordinary seed with a passphrase | Without passphrase → current wallet |
+| Known BIP-85 child | Deriving parent → current child |
+| Known BIP-85 child with a passphrase | Deriving parent → child without passphrase → current child |
 
-Arrows use the same shared passphrase yellow (`#FFE20E`) as the menu check.
-This convention applies to passphrase review, the loaded-seed header, and
-In-Memory Seeds. LifeHash pixels and unrelated green success checks are unchanged.
+Arrows use the same semantic colors as the menu checks: the shared
+passphrase yellow (`#FFE20E`) marks a passphrase step, while blue marks
+a BIP-85 parent-to-child derivation. A passphrased-child row therefore has a
+blue first arrow and a passphrase-colored second arrow. The convention also
+applies to passphrase review, the loaded-seed header, BIP-85 review, and the
+persistent child-word header. Labels, sequence positions, and hexadecimal
+fingerprints remain available; LifeHash pixels are unchanged. Unrelated
+success and verification checks retain their existing green color.
 Selected rows keep these exact colors. Compact black backings behind the
 arrows and semantic checkmarks keep them visible against the orange selection
 background without recoloring the symbols or LifeHash images.
@@ -93,17 +112,122 @@ Rows use 20px LifeHashes, 20px fixed-width fingerprint text, and 10px gaps
 on each side of an arrow. Derivation steps are retained even if two 32-bit
 fingerprints happen to be equal; matching XFPs do not prove matching wallets.
 
-Choosing any row opens its final current wallet.
+The parent image uses its fingerprint at child creation, including any
+passphrase used for derivation. Discarding or later editing the loaded parent
+does not change the child's recorded origin. If no parent fingerprint is
+known, the row omits that step. Choosing any row opens its final current
+wallet, not one of the preceding identities.
 
 Discarding a loaded seed returns to **In-Memory Seeds** with that entry removed.
 If no loaded seeds remain, it returns to the main menu. This applies equally to
-ordinary seeds and passphrased wallets. Discard clears prior
+ordinary seeds, passphrased wallets, and BIP-85 children. Discard clears prior
 wallet and navigation state while preserving the other loaded seeds and any
 unrelated pending seed.
 
 The bounded cache contains only public fingerprint bytes and derived RGB bytes.
 Each call returns a fresh image. The icon is a visual representation of the
 same 32-bit fingerprint, not an additional independent identifier.
+
+## BIP-85 parent and child identities
+
+After selecting a child index, a review screen shows **Parent → Child** with
+both LifeHashes and hexadecimal fingerprints, plus the index and word count.
+The parent is the actual loaded wallet, including its current passphrase.
+Unlike passphrase review, this first identity is not the unpassphrased baseline.
+
+BIP-85 derives fresh entropy from the selected BIP-32 root using a fully
+hardened path. For the English BIP-39 application the path is
+`m/83696968'/39'/0'/{words}'/{index}'`; the application converts the resulting
+entropy into the child's mnemonic. See the [BIP-85 specification](https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki#specification)
+and its [BIP-39 application](https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki#bip39).
+
+The displayed child identity is computed by restoring that mnemonic as a new
+BIP-39 seed **with an empty passphrase**, then calculating its own BIP-32 master
+fingerprint. It does not inherit the parent's passphrase and is not the
+fingerprint of the intermediate hardened derivation node. This follows
+[BIP-39's mnemonic-to-seed conversion](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki#from-mnemonic-to-seed)
+and [BIP-32's key-identifier definition](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#key-identifiers).
+
+Choosing **View seed words** continues through the existing private-word
+warning and backup workflow. Every child-word page retains the parent LifeHash
+→ child LifeHash header, the child's hexadecimal fingerprint, and a child-index
+and page label. Child words appear three per page: four pages for 12 words or
+eight pages for 24 words. Ordinary seed-word pages keep four words per page.
+
+After the last word page, **Verify & load** starts the backup-word check;
+**Load child** continues directly. Successful verification also ends
+with an explicit **Load child** action. Loading adds the derived child as a
+separate seed with an empty passphrase, or selects its canonical stored
+instance if the full derived seed bytes already match a loaded wallet. The
+parent remains loaded and unchanged, and any unrelated pending seed is
+preserved. The child becomes the selected seed. Prior signing, address,
+resume-flow, and navigation state is cleared before its menu opens.
+
+A known child's **BIP-85 child seed** action opens a submenu with **Change
+child index** and **Derive new child**. Changing the index keeps the original
+word count and prefills the recorded index. It resolves the original parent
+from the currently loaded seeds, then derives a sibling from that parent's
+wallet, including the passphrase originally used for derivation. Selecting the
+unchanged index returns to the existing child unchanged, preserving its own
+passphrase.
+
+A different index produces a new sibling with no passphrase of its own. The
+original child remains loaded during identity review, word review, and backup
+verification. After **Load child**, **Replace current** is selected by default;
+**Load separately** keeps both siblings, and **Cancel** returns to the original
+child without loading the candidate. **Back** returns to the preceding backup
+prompt or success page. Both commit options recheck the loaded source child,
+verified parent, and complete candidate derivation immediately before storage
+changes; duplicate selection still uses full derived seed bytes.
+
+**Derive new child** instead uses the selected child's current wallet,
+including its own passphrase, as the parent of a new generation. It offers the
+ordinary word-count and index choices and loads the resulting grandchild
+separately. It does not require the selected child's original parent to remain
+loaded.
+
+The child's **BIP-39 Passphrase** action uses the ordinary loaded-seed editor.
+Its candidate uses only the child mnemonic and does not edit the parent or
+change the child's BIP-85 derivation. Its review shows the child mnemonic
+without a passphrase → the child with the proposed passphrase. **Replace
+current** replaces the selected child wallet; **Load separately** retains the
+original child and loads the variant alongside it. Cancelling leaves both
+child and parent unchanged. The existing passphrase setting
+continues to control whether this menu action is available.
+
+Session metadata records whether the seed is a known child and an optional
+origin tuple: `bip85_parent_fingerprint`, `bip85_child_index`, and
+`bip85_num_words`. The fingerprint snapshots the deriving parent's public
+identity, including its passphrase; a parent snapshot implies child status.
+Loading a derived child sets all three fields, and child passphrase changes
+preserve them. The metadata contains no parent Seed object, mnemonic,
+passphrase, or private key, so the parent can be discarded independently.
+An ordinary mnemonic import alone cannot infer BIP-85 provenance.
+
+When a full-seed-bytes match reuses a canonical loaded wallet, its existing
+complete origin takes precedence. Partial metadata can be filled only from a
+complete, compatible tuple; fields from unrelated origins are never combined.
+For a passphrase change, the original mnemonic's origin takes precedence over
+the candidate's. A replacement sibling has a different mnemonic and keeps its
+own new index, without inheriting the old child's origin. The row records one
+observed derivation route; it is not proof of a unique parent. Neither metadata
+nor a 32-bit fingerprint participates in wallet equality or duplicate detection.
+
+An index change requires complete supported origin metadata and exactly one
+verified, currently loaded parent. The fingerprint only narrows the candidates:
+each candidate must reproduce the child's complete mnemonic at the recorded
+index and word count, ignoring the child's own passphrase. Missing, changed,
+or ambiguous parents cannot authorize an index change. **Parent Needed** asks
+for the original parent with its original passphrase; **Origin Unavailable**
+explains when derivation metadata is missing. Both return to the original
+child's menu and clear stale derivation history. **Derive new child** remains
+available through the submenu. No parent reference is cached in the child.
+
+Navigation arguments carry the parent seed object, child index, and word
+count while deriving and reviewing; they do not include child mnemonic
+strings or private bytes. After loading, wallet actions receive the stored
+child object. The live preview runs these same application views for both
+unpassphrased and passphrased public demonstration parents.
 
 ## Pinned reference sources
 
@@ -238,11 +362,26 @@ numeric cases pin three luminance results and four modulo boundaries from the
 independent C++ fixtures. The 64 helper tests also cover input validation,
 scaling, independent returned images, and bounded public-data caching.
 
-Passphrase flow tests cover add/edit/remove, full-byte deduplication, immutable
-source and pending-seed preservation, settings gates, long-review pagination,
-Save/Back/Cancel navigation, and signing-state cleanup only on commit. Native
-review rendering tests verify matching yellow text and arrow pixels. The public
-preview can generate the actual passphrase screens and separate-loading list.
+The BIP-85 index-change flow tests cover both word
+counts, unchanged-index preservation, sibling replacement/separate loading,
+grandchild derivation with the child's passphrase, backup navigation, stale
+parent/source rejection, and duplicate selection. The complete non-screenshot
+suite and all 22 screenshot locales were validated. Screenshot generation
+produced 3,520 PNGs, with 198 supplemental captures and 50 native gallery
+captures. Native captures and the live browser verified the actual
+passphrased parent `0d777ffb` → child `cca51e4b` with a blue arrow, plus the
+yellow step to the child's own passphrase wallet `4be9bd39`. Only the terminal
+XFP is printed, without overlapping Back. The live browser
+confirmed **Continue** first and selected by default. Back from **Load Wallet**
+restored **Change Wallet** with the demonstration passphrase `aaa` intact and
+Continue selected; storage still contained only the original `73c5da0a` wallet. The live preview confirmed
+matching yellow passphrase text and symbols, then **Continue → Load Wallet**
+with **Replace current** selected by default. Choosing **Load separately** for
+the demonstration passphrase `aaa` retained `73c5da0a` and loaded `382af2cb`;
+both appeared in **In-Memory Seeds** with the yellow relationship arrow.
+Normal and selected mixed-color rows and the child menu were also checked.
+In-memory relationship rows were checked across all 22 locales, including
+the selected three-LifeHash row.
 
 Cross-implementation comparisons must use the same four input bytes, v2,
 module size 1, no alpha, and unscaled row-major RGB data.

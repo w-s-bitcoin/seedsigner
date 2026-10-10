@@ -234,3 +234,66 @@ class TestPassphraseReviewColor(BaseTest):
         # of the saturated red channel, visibly changing the glyph hue.
         assert all(all(channel <= target for channel, target in zip(pixel, expected_color))
                    for pixel in text_colors)
+
+
+class TestSeedOptionsHeader(BaseTest):
+    @pytest.mark.parametrize("parent,without,current", [
+        ("b4e3f5ed", None, "47c88c48"),
+        ("b4e3f5ed", "47c88c48", "0d777ffb"),
+        (None, None, "47c88c48"),
+        ("deadbeef", "deadbeef", "deadbeef"),
+    ])
+    def test_native_child_header_renders_every_role_without_overlapping_back_or_xfp(
+            self, parent, without, current, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from PIL import Image, ImageColor, ImageDraw
+
+        from seedsigner.gui.components import FingerprintArrow, GUIConstants, IconTextLine, LifeHashIcon, TextArea
+        from seedsigner.gui.renderer import Renderer
+        from seedsigner.gui.screens.screen import ButtonOption
+        from seedsigner.gui.screens.seed_screens import SeedOptionsScreen
+
+        renderer = MagicMock()
+        renderer.canvas_width = renderer.canvas_height = 240
+        renderer.canvas = Image.new("RGB", (240, 240), GUIConstants.BACKGROUND_COLOR)
+        renderer.draw = ImageDraw.Draw(renderer.canvas)
+        monkeypatch.setattr(Renderer, "get_instance", lambda: renderer)
+        screen = SeedOptionsScreen(fingerprint_parent=parent, fingerprint_without=without, fingerprint=current,
+                                   button_data=[ButtonOption("Scan PSBT")])
+        screen._render()
+        icons, arrows, labels = [], [], []
+
+        def visit(component):
+            if isinstance(component, LifeHashIcon):
+                icons.append(component)
+            elif isinstance(component, FingerprintArrow):
+                arrows.append(component)
+            elif isinstance(component, TextArea):
+                labels.append(component)
+            elif isinstance(component, IconTextLine):
+                visit(component.icon)
+                visit(component.value_textarea)
+            else:
+                for child in component.components:
+                    visit(child[1] if isinstance(child, tuple) else child)
+
+        visit(screen.top_nav.title)
+        expected_fingerprints = ([parent] if parent else []) + ([without] if without else []) + [current]
+        expected_colors = ([GUIConstants.BIP85_COLOR] if parent else []) + ([GUIConstants.PASSPHRASE_COLOR] if without else [])
+        assert [icon.fingerprint for icon in icons] == expected_fingerprints
+        assert [arrow.color for arrow in arrows] == expected_colors
+        assert [label.text for label in labels] == [current]
+
+        left_edge = screen.top_nav.left_button.screen_x + screen.top_nav.left_button.width + GUIConstants.COMPONENT_PADDING
+        right_edge = renderer.canvas_width - GUIConstants.EDGE_PADDING
+        for icon in icons:
+            assert left_edge <= icon.screen_x < icon.screen_x + icon.width <= right_edge
+            box = (icon.screen_x, icon.screen_y, icon.screen_x + icon.width, icon.screen_y + icon.height)
+            assert renderer.canvas.crop(box).tobytes() == icon.image.tobytes()
+        for arrow in arrows:
+            assert renderer.canvas.getpixel((arrow.screen_x + 10, arrow.screen_y + 10)) == ImageColor.getrgb(arrow.color)
+        label = labels[0]
+        assert icons[-1].screen_x + icons[-1].width < label.screen_x
+        assert label.screen_x + label.text_width <= right_edge
+        assert screen.top_nav.title.content_width <= screen.top_nav.title.width
