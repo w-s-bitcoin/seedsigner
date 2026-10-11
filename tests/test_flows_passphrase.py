@@ -61,7 +61,6 @@ class TestLoadedSeedPassphraseFlows(FlowTest):
         ("old wallet", "REMOVE", "", None),
         ("old wallet", "EDIT", "", "old wallet"),
         ("old wallet", "EDIT", "old wallet", "old wallet"),
-        ("", "EDIT", "", ""),
         ("", "EDIT", "  Keep  Spaces!  ", ""),
         ("", "EDIT", "   ", ""),
         ("", "EDIT", "caf\u00e9", ""),
@@ -135,6 +134,32 @@ class TestLoadedSeedPassphraseFlows(FlowTest):
             assert self.controller.storage.seeds[1] is seed
         else:
             assert self.controller.storage.seeds[1] is not seed
+
+    @pytest.mark.parametrize("setting", [SettingsConstants.OPTION__ENABLED, SettingsConstants.OPTION__REQUIRED])
+    def test_empty_add_returns_without_removal_or_wallet_mutation(self, setting):
+        seed = self.load_seed()
+        pending = Seed(MNEMONIC, passphrase="unrelated pending")
+        self.controller.storage.set_pending_seed(pending)
+        state = object()
+        self.controller.psbt_seed = seed
+        self.controller.psbt = state
+        self.settings.set_value(SettingsConstants.SETTING__PASSPHRASE, setting)
+        def stop_before_resuming_wallet_flow(view):
+            assert view.seed is seed
+            raise StopFlowBasedTest()
+
+        self.run_sequence([
+            FlowStep(seed_views.SeedEditPassphraseView, screen_return_value=dict(passphrase="")),
+            FlowStep(seed_views.SeedConfirmPassphraseView, is_redirect=True),
+            FlowStep(seed_views.SeedOptionsView, before_run=stop_before_resuming_wallet_flow),
+        ], initial_destination_view_args=dict(seed=seed))
+        assert self.controller.storage.seeds == [seed]
+        assert self.controller.storage.seeds[0] is seed
+        assert not seed.has_passphrase
+        assert self.controller.storage.get_pending_seed() is pending
+        assert self.controller.psbt_seed is seed
+        assert self.controller.psbt is state
+        assert len(self.controller.back_stack) == 1
 
     @pytest.mark.parametrize("action", ["EDIT", "REMOVE"])
     def test_cancel_confirmation_preserves_original_wallet(self, action):
@@ -389,6 +414,7 @@ class TestLoadedSeedPassphraseFlows(FlowTest):
             assert all(getattr(self.controller, field) is value for field, value in state.items())
             self.expect_screen(
                 fingerprint_without="73c5da0a", fingerprint_new=expected.get_fingerprint(),
+                fingerprint_current=seed.get_fingerprint(),
                 selected_button=0,
                 button_data=[seed_views.SeedPassphraseSaveView.REPLACE,
                              seed_views.SeedPassphraseSaveView.LOAD_SEPARATELY,

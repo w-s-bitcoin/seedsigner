@@ -664,7 +664,7 @@ class SeedWordsBackupTestPromptScreen(ButtonListScreen):
         super().__post_init__()
 
         self.components.append(TextArea(
-            text=_("Verify your backup, or load this child seed now.") if self.is_bip85_child else _("Optionally verify that your mnemonic backup is correct."),
+            text=_("Loading this child seed is optional.") if self.is_bip85_child else _("Optionally verify that your mnemonic backup is correct."),
             screen_y=self.top_nav.height,
             is_text_centered=True,
         ))
@@ -1268,9 +1268,10 @@ class SeedConfirmPassphraseScreen(ButtonListScreen):
 
 @dataclass
 class SeedWalletSaveScreen(ButtonListScreen):
-    """Choose how to retain a reviewed wallet, showing only its public identity."""
+    """Separate the derivation diagram from the loaded entry being replaced."""
     fingerprint_source: str = None
     fingerprint_new: str = None
+    fingerprint_current: str = None
     arrow_color: str = GUIConstants.BODY_FONT_COLOR
 
     def __post_init__(self):
@@ -1284,11 +1285,22 @@ class SeedWalletSaveScreen(ButtonListScreen):
             arrow_color=self.arrow_color,
             screen_y=self.top_nav.height,
         ))
+        # This is a replacement target, not a third derivation step. Keep the
+        # source -> candidate LifeHashes intact and name the loaded wallet in
+        # text, even when it already has a passphrase or is a BIP-85 sibling.
         self.components.append(TextArea(
-            text=_("Replace this entry or keep both in memory?"),
+            text=_("Replace loaded wallet:"),
             font_size=16,
             screen_y=self.top_nav.height + 28,
-            height=42,
+            height=20,
+        ))
+        self.components.append(TextArea(
+            text=self.fingerprint_current,
+            font_name=GUIConstants.FIXED_WIDTH_FONT_NAME,
+            font_size=20,
+            screen_y=self.top_nav.height + 48,
+            height=24,
+            auto_line_break=False,
         ))
 
 

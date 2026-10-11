@@ -813,10 +813,18 @@ class LifeHashIcon(BaseComponent):
     screen_y: int = 0
 
     def __post_init__(self):
-        from seedsigner.helpers.lifehash import fingerprint_lifehash
         super().__post_init__()
-        self.image = fingerprint_lifehash(self.fingerprint, self.size)
         self.width = self.height = self.size
+        self._image = None
+
+    @property
+    def image(self):
+        # Lists construct offscreen buttons too. Generate each icon only when
+        # first used, then keep its canonical pixels for subsequent renders.
+        if self._image is None:
+            from seedsigner.helpers.lifehash import fingerprint_lifehash
+            self._image = fingerprint_lifehash(self.fingerprint, self.size)
+        return self._image
 
     def render(self):
         # The controller's INVON bit is panel polarity, not necessarily a visual

@@ -351,6 +351,8 @@ def generate_screenshots(output, renderer):
          lambda: {"seed": controller.storage.seeds[-1]}),
         ("51-bip85-origin-unavailable", seed_views.SeedBIP85ChildMenuView,
          lambda: {"seed": controller.storage.seeds[-1]}),
+        ("53-bip85-backup-verified", seed_views.SeedWordsBackupTestSuccessView,
+         {"seed": bare, "bip85_data": {"num_words": 12, "child_index": 0}}),
         # Pair with 08-edit-confirmation: same loaded wallet and candidate.
         ("52-edit-passphrase-load-choice", seed_views.SeedConfirmPassphraseView,
          lambda: {"seed": controller.storage.seeds[0], "passphrase": DEMO_EDIT_PASSPHRASE}),
